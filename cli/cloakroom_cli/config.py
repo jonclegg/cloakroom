@@ -10,6 +10,8 @@ CDP_URL = f"http://127.0.0.1:{CDP_PORT}"
 VIEWER_URL = f"http://127.0.0.1:{VIEWER_PORT}"
 
 STATE_DIR = pathlib.Path.home() / ".cloakroom"
+SHARE_FILE = STATE_DIR / "share.json"
+SHARE_LOG = STATE_DIR / "share.log"
 AMAZON_EMAIL_FILE = STATE_DIR / "amazon.json"
 AMAZON_KEYCHAIN_SERVICE = "cloakroom-amazon"
 

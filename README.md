@@ -4,7 +4,7 @@
 curl -fsSL https://raw.githubusercontent.com/jonclegg/cloakroom/main/install.sh | sh # // pragma: allowlist secret
 ```
 
-That installs Cloakroom on a Mac and starts it. It uses **OrbStack**, not Docker Desktop. If OrbStack is missing, the installer installs it with Homebrew, or opens [orbstack.dev/download](https://orbstack.dev/download) and waits while you drag the app to Applications.
+That installs Cloakroom on a Mac and starts it. It uses **OrbStack**, not Docker Desktop. If OrbStack is missing, the installer installs it with Homebrew, or opens [orbstack.dev/download](https://orbstack.dev/download) and waits while you drag the app to Applications. It also installs `cloudflared` (Homebrew `cloudflared`, or the official binary from [Cloudflare's downloads](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/downloads/)) so the viewer can be opened on a phone.
 
 After it finishes, these work from any terminal:
 
@@ -86,7 +86,9 @@ The CLI is the contract. Every command takes `--json`:
 | Command | What it does |
 | --- | --- |
 | `cloakroom start` / `stop` | Start or stop the browser. Your logins are kept. |
-| `cloakroom status --json` | `docker_running`, `ready`, `browser`, `viewer_url`, `cdp_url`, `amazon_credentials` |
+| `cloakroom status --json` | `docker_running`, `ready`, `browser`, `viewer_url`, `cdp_url`, `share_url`, `amazon_credentials` |
+| `cloakroom share` / `share --json` | One command. Starts a temporary HTTPS link to the viewer and prints it. No confirmation. `{"event":"share_ready","url":"https://….trycloudflare.com","viewer_local":"http://127.0.0.1:6080"}`. |
+| `cloakroom unshare` / `share stop` | Stop that link. The URL stops working. |
 | `cloakroom amazon-login --json` | Streams events (`browser_connected`, `waiting_for_user`, `email_filled`, `password_filled`, `sending_code`, `waiting_for_otp`, `otp_filled`, `otp_timeout`, `success`, `timeout`). Exit code `0` means logged in. |
 | `cloakroom creds set` / `forget` / `status` | Manage the Amazon login in the macOS Keychain. |
 
@@ -99,6 +101,19 @@ The CLI is the contract. Every command takes `--json`:
 ## Watch and take over: the viewer
 
 http://127.0.0.1:6080 shows the real browser, live. You can click and type in it. Use it to enter credentials the first time, solve a puzzle if Amazon shows one, type a code yourself, or just watch the agent work. `cloakroom start` opens it for you.
+
+### On your phone
+
+`cloakroom share` is one command. It starts the browser if it is not already running, opens a Cloudflare quick tunnel to **the viewer only**, and prints an `https://….trycloudflare.com` link. It does not ask you to confirm. Open that link in Safari or Chrome. An agent (Grok Bot or Muse) should run `cloakroom share` and send you the link immediately, with no approval step. The pid and URL are saved in `~/.cloakroom/share.json`. `cloakroom status` shows the link while it is active.
+
+```bash
+cloakroom share
+cloakroom unshare
+```
+
+That link is a secret capability URL: anyone who has it can control the logged-in browser. Stop it with `cloakroom unshare` (or `cloakroom share stop`) when you are done. Each new share gets a new link; the old one dies.
+
+This is the remote path. Do not use Tailscale, Cloudflare Funnel, or a port forward. Ports 6080 and 9222 stay on `127.0.0.1`. The tunnel never carries port 9222 (the DevTools port). Amazon codes are still submitted to the localhost `submit_url` from `waiting_for_otp`, not to the share link.
 
 ---
 
@@ -137,6 +152,9 @@ Run `xcode-select --install` once to get Apple's command-line tools, which inclu
 **"permission denied: ./cloakroom"**
 Run `chmod +x cloakroom start.sh stop.sh install.sh` once, or use `bash cloakroom …`.
 
+**"cloudflared is not installed"**
+On a Mac: `brew install cloudflared`. Without Homebrew, download the binary from [Cloudflare's downloads](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/downloads/) and put `cloudflared` on your PATH (the Mac installer does this). Then run `cloakroom share` again.
+
 **"port is already allocated"**
 Something else uses 9222 or 6080 (often a Chrome started with remote debugging). Close it, or change the ports in `.env`.
 
@@ -157,6 +175,8 @@ A free key allows one browser session at a time. Stop other CloakBrowser session
 ## Windows
 
 The browser and viewer work on Windows with Docker Desktop. The one-line installer is Mac-only because it sets up OrbStack. The code handoff is the same: `amazon-login` emits `waiting_for_otp`, and the assistant POSTs the code. You can also type the code in the viewer.
+
+Phone viewer: install [cloudflared](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/downloads/) (`winget install --id Cloudflare.cloudflared`), then run `cloakroom share` from Git Bash or the same `./cloakroom` launcher. `cloakroom unshare` stops it.
 
 1. Install [Docker Desktop for Windows](https://www.docker.com/products/docker-desktop/). It needs **WSL 2**, and the installer offers to turn it on. Restart, open Docker Desktop, and wait for **Engine running**.
 2. Download this repo (**Code > Download ZIP**, then Extract All) or `git clone` it.
@@ -209,7 +229,7 @@ Add `?fingerprint=<seed>` to the CDP URL for a separate identity with its own fi
 
 ## Security and privacy
 
-- **Never expose ports 9222 or 6080 to the internet or your network.** Port 9222 gives full control of a browser that's logged in to your accounts, and the viewer has no password. Both are bound to `127.0.0.1`. Keep it that way. For remote use, tunnel over SSH or Tailscale instead of opening ports.
+- **Ports 9222 and 6080 stay on `127.0.0.1`.** Port 9222 gives full control of a browser that's logged in to your accounts, and the viewer has no password. Do not publish either port, and do not use Tailscale or Funnel. The phone path is `cloakroom share`: a Cloudflare quick tunnel to the viewer only. The `https://….trycloudflare.com` link is a capability URL — anyone who has it can control the logged-in browser. Run `cloakroom unshare` when you are done. The link changes every time you share. The tunnel never includes port 9222.
 - **Passwords** live in the macOS Keychain (`cloakroom creds set`) or are typed by you in the viewer. They're never kept in the repo, `.env`, or agent chat. The email is kept in `~/.cloakroom/amazon.json`.
 - **One-time codes** are read by the assistant (Grok Bot or Muse) from Messages. Cloakroom only receives the code on `127.0.0.1` and types it into the browser. It does not read Messages, and it does not log the code.
 - `.env` (license key, proxy password) is git-ignored.

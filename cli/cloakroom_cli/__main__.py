@@ -6,6 +6,7 @@ import sys
 from cloakroom_cli import amazon
 from cloakroom_cli import config
 from cloakroom_cli import creds
+from cloakroom_cli import share
 from cloakroom_cli import stack
 
 ###############################################################################
@@ -38,6 +39,7 @@ def cmd_status(args):
     ready = health == "healthy"
     version = stack.browser_version() if ready else None
     email = creds.stored_email()
+    share_url = share.active_url()
     data = {
         "docker_running": stack.docker_running(),
         "container": health,
@@ -45,6 +47,7 @@ def cmd_status(args):
         "browser": version,
         "cdp_url": config.CDP_URL,
         "viewer_url": config.VIEWER_URL,
+        "share_url": share_url,
         "amazon_credentials": bool(email),
     }
     if args.json:
@@ -54,6 +57,7 @@ def cmd_status(args):
     print(f"Container:         {health}")
     print(f"Browser:           {version or '-'}")
     print(f"Viewer:            {config.VIEWER_URL}")
+    print(f"Share:             {share_url or '-'}")
     print(f"CDP:               {config.CDP_URL}")
     print(f"Amazon creds set:  {bool(email)}")
     return 0 if ready else 1
@@ -72,6 +76,46 @@ def cmd_amazon_login(args):
         otp_code=args.otp,
     )
     return 0 if ok else 1
+
+###############################################################################
+
+def cmd_share(args):
+    if args.action == "stop":
+        return cmd_unshare(args)
+    state = share.start(make_emit(args.json))
+    if state is None:
+        return 1
+    payload = {
+        "event": "share_ready",
+        "url": state["url"],
+        "viewer_local": state["viewer_local"],
+        "reused": state["reused"],
+    }
+    if args.json:
+        print(json.dumps(payload))
+        return 0
+    if state["reused"]:
+        print("Already sharing. This link stays the same until you unshare.")
+    print(state["url"])
+    print()
+    print("Anyone with this link can control the logged-in browser. Treat it as a secret.")
+    print("It can take a few seconds before the link loads.")
+    print("Stop it with: cloakroom unshare")
+    print("The link changes every time you start a new share.")
+    return 0
+
+###############################################################################
+
+def cmd_unshare(args):
+    stopped = share.stop()
+    if args.json:
+        print(json.dumps({"event": "share_stopped", "stopped": stopped}))
+        return 0
+    if stopped:
+        print("Stopped the remote viewer. The old link no longer works.")
+        return 0
+    print("No remote viewer is running.")
+    return 0
 
 ###############################################################################
 
@@ -106,6 +150,11 @@ def build_parser():
     add("start", "Start the stealth browser stack.").set_defaults(func=cmd_start)
     add("stop", "Stop the stack (profile is kept).").set_defaults(func=cmd_stop)
     add("status", "Report readiness and the browser.").set_defaults(func=cmd_status)
+
+    share_cmd = add("share", "Start a Cloudflare quick tunnel to the viewer and print the URL. No confirmation.")
+    share_cmd.add_argument("action", nargs="?", default="start", choices=["start", "stop"])
+    share_cmd.set_defaults(func=cmd_share)
+    add("unshare", "Stop the remote viewer share.").set_defaults(func=cmd_unshare)
 
     login = add("amazon-login", "Drive Amazon sign-in. The assistant supplies the one-time code.")
     login.add_argument(
