@@ -151,7 +151,7 @@ def build_parser():
     add("stop", "Stop the stack (profile is kept).").set_defaults(func=cmd_stop)
     add("status", "Report readiness and the browser.").set_defaults(func=cmd_status)
 
-    share_cmd = add("share", "Publish the viewer at a temporary HTTPS URL for a phone.")
+    share_cmd = add("share", "Start a Cloudflare quick tunnel to the viewer and print the URL. No confirmation.")
     share_cmd.add_argument("action", nargs="?", default="start", choices=["start", "stop"])
     share_cmd.set_defaults(func=cmd_share)
     add("unshare", "Stop the remote viewer share.").set_defaults(func=cmd_unshare)

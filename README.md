@@ -87,7 +87,7 @@ The CLI is the contract. Every command takes `--json`:
 | --- | --- |
 | `cloakroom start` / `stop` | Start or stop the browser. Your logins are kept. |
 | `cloakroom status --json` | `docker_running`, `ready`, `browser`, `viewer_url`, `cdp_url`, `share_url`, `amazon_credentials` |
-| `cloakroom share` / `share --json` | Start a temporary HTTPS link to the viewer for a phone. Prints the URL, or `{"event":"share_ready","url":"https://….trycloudflare.com","viewer_local":"http://127.0.0.1:6080"}`. |
+| `cloakroom share` / `share --json` | One command. Starts a temporary HTTPS link to the viewer and prints it. No confirmation. `{"event":"share_ready","url":"https://….trycloudflare.com","viewer_local":"http://127.0.0.1:6080"}`. |
 | `cloakroom unshare` / `share stop` | Stop that link. The URL stops working. |
 | `cloakroom amazon-login --json` | Streams events (`browser_connected`, `waiting_for_user`, `email_filled`, `password_filled`, `sending_code`, `waiting_for_otp`, `otp_filled`, `otp_timeout`, `success`, `timeout`). Exit code `0` means logged in. |
 | `cloakroom creds set` / `forget` / `status` | Manage the Amazon login in the macOS Keychain. |
@@ -104,14 +104,14 @@ http://127.0.0.1:6080 shows the real browser, live. You can click and type in it
 
 ### On your phone
 
-`cloakroom share` starts the browser if it is not already running, then opens a Cloudflare quick tunnel to **the viewer only**. It prints an `https://….trycloudflare.com` link you can open in Safari or Chrome. The command returns after the link is up. The pid and URL are saved in `~/.cloakroom/share.json`. `cloakroom status` shows the link while it is active.
+`cloakroom share` is one command. It starts the browser if it is not already running, opens a Cloudflare quick tunnel to **the viewer only**, and prints an `https://….trycloudflare.com` link. It does not ask you to confirm. Open that link in Safari or Chrome. An agent (Grok Bot or Muse) should run `cloakroom share` and send you the link immediately, with no approval step. The pid and URL are saved in `~/.cloakroom/share.json`. `cloakroom status` shows the link while it is active.
 
 ```bash
 cloakroom share
 cloakroom unshare
 ```
 
-That link is a capability URL: anyone who has it can control the logged-in browser. Treat it like a password. Stop it with `cloakroom unshare` (or `cloakroom share stop`) when you are done. Each new share gets a new link; the old one dies.
+That link is a secret capability URL: anyone who has it can control the logged-in browser. Stop it with `cloakroom unshare` (or `cloakroom share stop`) when you are done. Each new share gets a new link; the old one dies.
 
 This is the remote path. Do not use Tailscale, Cloudflare Funnel, or a port forward. Ports 6080 and 9222 stay on `127.0.0.1`. The tunnel never carries port 9222 (the DevTools port). Amazon codes are still submitted to the localhost `submit_url` from `waiting_for_otp`, not to the share link.
 

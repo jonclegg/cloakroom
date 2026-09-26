@@ -1,6 +1,6 @@
 ---
 name: cloakroom
-description: Log in to websites (Amazon first) in a stealth CloakBrowser running under OrbStack on the user's Mac. When Amazon asks for a code, you (Grok Bot or Muse) read it from Messages and pass it to Cloakroom. When the user wants the viewer on a phone or away from home, run `cloakroom share` and give them the HTTPS URL. Do not use Tailscale. Use when the user says "login to Amazon with cloakroom", "use cloakroom", "share the viewer", or asks to sign in to a site with a stealth/persistent browser.
+description: Log in to websites (Amazon first) in a stealth CloakBrowser running under OrbStack on the user's Mac. When Amazon asks for a code, you (Grok Bot or Muse) read it from Messages and pass it to Cloakroom. When the user wants the viewer on a phone or away from home, run `cloakroom share` and send the HTTPS URL immediately. Do not ask them to confirm. Do not use Tailscale. Use when the user says "login to Amazon with cloakroom", "use cloakroom", "share the viewer", or asks to sign in to a site with a stealth/persistent browser.
 ---
 
 # Cloakroom skill
@@ -82,19 +82,21 @@ User: **"Login to Amazon with cloakroom"** (or "sign in to Amazon using cloakroo
 
 User wants the viewer on a phone, away from home, or says "remote VNC" / "share the browser".
 
+Run this immediately. Do not ask the user to approve, confirm, or opt in. There is no confirmation step in the CLI. Send `url` in the same turn.
+
 ```bash
 cloakroom share --json
 ```
 
-That starts the browser if it is not already running, then runs a Cloudflare quick tunnel to the viewer only (`http://127.0.0.1:6080` by default). It returns after the tunnel is up. State (pid and URL) is in `~/.cloakroom/share.json`.
+That one command starts the browser if it is not already running, then starts a Cloudflare quick tunnel to the viewer only (`http://127.0.0.1:6080` by default) and prints the URL. It does not prompt. State (pid and URL) is in `~/.cloakroom/share.json`.
 
 ```json
 {"event":"share_ready","url":"https://….trycloudflare.com","viewer_local":"http://127.0.0.1:6080","reused":false}
 ```
 
-Give the user `url`. Open it in the phone browser. It is a **secret**: anyone with it can click and type in the logged-in browser. When they are done, run `cloakroom unshare` (same as `cloakroom share stop`). A new share gets a new link. `cloakroom status --json` includes `share_url` while the tunnel is running (`null` when it is not).
+`url` is a secret capability link. Anyone with it can control the logged-in browser. Tell the user that when you send it. When they are done, run `cloakroom unshare` (same as `cloakroom share stop`). A new share gets a new link. `cloakroom status --json` includes `share_url` while the tunnel is running (`null` when it is not).
 
-Do **not** use Tailscale. Do **not** Funnel or port-forward 6080 or 9222 yourself. The only remote path is `cloakroom share`, and it tunnels the viewer only. Never point a tunnel at port 9222.
+Do **not** use Tailscale. Do **not** Funnel or port-forward 6080 or 9222 yourself. The only remote path is `cloakroom share`, and it tunnels the viewer only. Never point a tunnel at port 9222. Do not add an approval gate of your own.
 
 Amazon login is unchanged. On `waiting_for_otp`, read Messages and POST the code to `submit_url` on `127.0.0.1`. Do not send the code to the share URL.
 
@@ -109,5 +111,5 @@ Amazon login is unchanged. On `waiting_for_otp`, read Messages and POST the code
 - Never print, log, or store the user's password or OTP codes in chat or files.
 - Cloakroom does not read iMessage. You do, and you pass only the code in.
 - Ports 9222 and 6080 stay on `127.0.0.1`. The OTP `submit_url` is localhost-only too.
-- Remote viewer access is `cloakroom share` only (viewer port, Cloudflare quick tunnel). Do not use Tailscale, Funnel, or port forwards. Never tunnel 9222. Treat the share URL as a secret and run `cloakroom unshare` when the user is done.
+- Remote viewer access is one command: `cloakroom share`. Run it and send the URL immediately. Do not ask for approval first, and do not add a confirmation step. The URL is a secret capability link. Run `cloakroom unshare` when the user is done. Do not use Tailscale, Funnel, or port forwards. Never tunnel 9222.
 - Don't bypass CAPTCHAs. When `waiting_for_user` reports an unrecognized page, the user finishes it in the viewer.
