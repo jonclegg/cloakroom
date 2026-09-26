@@ -1,0 +1,21 @@
+Cloakroom
+=========
+
+The scripts, Compose file, Dockerfile, and examples in this repository are
+licensed under the MIT License (see LICENSE).
+
+Cloakroom does not include, modify, or redistribute the CloakBrowser browser.
+It builds on the official Docker image `cloakhq/cloakbrowser`, published by
+CloakHQ, which Docker downloads directly from Docker Hub on your machine.
+
+- CloakBrowser wrapper code (Python/JS/.NET) is MIT licensed by CloakHQ.
+- The CloakBrowser Chromium binary inside that image is proprietary software
+  from CloakHQ, governed by its own CloakBrowser Binary License:
+  https://github.com/CloakHQ/CloakBrowser/blob/main/BINARY-LICENSE.md
+
+By running Cloakroom you use the CloakBrowser binary and agree to CloakHQ's
+Binary License. Cloakroom is an independent community project and is not
+affiliated with or endorsed by CloakHQ.
+
+The optional in-browser viewer uses noVNC (MPL-2.0), websockify (LGPL-3.0),
+and x11vnc (GPL-2.0), installed unmodified from Debian packages at build time.

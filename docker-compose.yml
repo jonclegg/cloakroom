@@ -1,0 +1,44 @@
+name: cloakroom
+
+services:
+  cloakroom:
+    build:
+      context: ./image
+    image: cloakroom:local
+    container_name: cloakroom
+    hostname: cloakroom
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    ports:
+      # Localhost only. Anyone who can reach these ports controls the browser.
+      - "127.0.0.1:${CLOAKROOM_CDP_PORT:-9222}:9222"
+      - "127.0.0.1:${CLOAKROOM_VIEWER_PORT:-6080}:6080"
+    # Chromium crashes tabs with Docker's default 64 MB /dev/shm.
+    shm_size: 2gb
+    volumes:
+      - profile:/profile
+      - binary-cache:/root/.cloakbrowser
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://localhost:9222/json/version"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  hello:
+    image: cloakhq/cloakbrowser:latest
+    profiles: ["examples"]
+    depends_on:
+      cloakroom:
+        condition: service_healthy
+    environment:
+      CDP_URL: http://cloakroom:9222
+    volumes:
+      - ./examples:/examples:ro
+    entrypoint: ["python", "-u", "/examples/hello.py"]
+
+volumes:
+  profile:
+  binary-cache:
