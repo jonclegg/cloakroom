@@ -49,24 +49,28 @@ A cloud VM browser often looks like a bot. It shows automation fingerprints, a d
 
 Cloakroom runs headed [CloakBrowser](https://github.com/CloakHQ/CloakBrowser) (stealth Chromium) in OrbStack on your Mac. Chromium is headed on the virtual display the viewer shows. The profile stays on your machine, so the login session persists. Grok Bot and Muse use this browser to sign in with your own account. Amazon sign-in is the flow Cloakroom ships. An optional proxy is [`CLOAKROOM_PROXY`](#settings). The product is the browser and the profile on your Mac, not a way to borrow your home IP.
 
-Grok Bot has a separate setting, **Route traffic through this computer**. When that toggle is on, the cloud browser's traffic leaves through your Mac. The browser is still stock headed Chrome. Only the egress IP changes.
+Grok Bot has a separate setting, **Route traffic through this computer**. When that toggle is on, the cloud browser's traffic leaves through your Mac. The browser is still stock headed Chrome. Only the egress IP changes. In an earlier homepage pass the same day, that toggle cleared many datacenter blocks on stock Chrome, including Home Depot, Ticketmaster, and Sephora. Sam's Club still showed the press-and-hold page. Cloakroom loaded the storefront. That is why the product is the browser and the profile, not only a change of egress.
 
 CloakBrowser's docs name Cloudflare Turnstile, HUMAN / PerimeterX, Akamai, DataDome, and Kasada as checks it targets. See [CloakHQ/CloakBrowser](https://github.com/CloakHQ/CloakBrowser).
 
-Homepage smoke on 2026-09-26, homepages only. Same twelve sites, three arms:
+Homepage smoke on 2026-09-26, homepages only. Cloud Grok Bot had the toggle off: headed Chrome, direct datacenter egress (about `169.150.196.10`). These twelve homepages challenged or blocked that browser. Headed CloakBrowser on the Mac loaded them.
 
-- **Cloud Grok Bot.** Toggle off. Headed Chrome, direct datacenter egress (about `169.150.196.10`).
-- **Routed Grok Bot.** Toggle on. Egress through the Mac (about `97.184.95.44`).
-- **Cloakroom.** Headed CloakBrowser on the Mac, unchanged. All twelve homepages passed in both runs.
+| Site | Cloud Grok Bot | Cloakroom |
+| --- | --- | --- |
+| **Home Depot** ([homedepot.com](https://www.homedepot.com)) | 403 Access Denied | Pass |
+| **Ticketmaster** ([ticketmaster.com](https://www.ticketmaster.com)) | 403 | Pass |
+| **Sam's Club** ([samsclub.com](https://www.samsclub.com)) | HUMAN / PerimeterX press-and-hold | Pass. The storefront loaded. |
+| **Sephora** ([sephora.com](https://www.sephora.com)) | 403 Access Denied | Pass |
+| **Tripadvisor** ([tripadvisor.com](https://www.tripadvisor.com)) | 403 | Pass |
+| **Etsy** ([etsy.com](https://www.etsy.com)) | 403 | Pass |
+| **Newegg** ([newegg.com](https://www.newegg.com)) | Cloudflare "Just a moment…" | Pass |
+| **American Airlines** ([aa.com](https://www.aa.com)) | Access Denied | Pass |
+| **Fanatics** ([fanatics.com](https://www.fanatics.com)) | 403 Access Denied | Pass |
+| **Indeed** ([indeed.com](https://www.indeed.com)) | Cloudflare challenge | Pass |
+| **Glassdoor** ([glassdoor.com](https://www.glassdoor.com)) | Cloudflare challenge | Pass |
+| **Vinted** ([vinted.com](https://www.vinted.com)) | Cloudflare challenge | Pass |
 
-| Site | Cloud Grok Bot | Routed Grok Bot | Cloakroom |
-| --- | --- | --- | --- |
-| **Home Depot** ([homedepot.com](https://www.homedepot.com)) | 403 Access Denied | Pass | Pass |
-| **Ticketmaster** ([ticketmaster.com](https://www.ticketmaster.com)) | 403 | Pass | Pass |
-| **Sam's Club** ([samsclub.com](https://www.samsclub.com)) | HUMAN / PerimeterX press-and-hold | Same press-and-hold challenge | Pass. The storefront loaded. |
-| **Sephora** ([sephora.com](https://www.sephora.com)) | 403 Access Denied | Pass | Pass |
-
-Amazon, Walmart, Target, Nike, Wayfair, Chewy, Zillow, and Best Buy passed in all three arms. Routing through the Mac cleared the cloud blocks on Home Depot, Ticketmaster, and Sephora. Sam's Club still showed the press-and-hold page to that stock Chrome browser. Cloakroom loaded the storefront.
+Amazon, Walmart, and some other shopping homepages passed on both the same day. CVS also returned 403 on the cloud browser. It is not one of the twelve above.
 
 A homepage is not a login, a checkout, or an on-sale page. IP reputation matters as much as the fingerprint. Results change. Cloakroom doesn't guarantee any site's bot checks will pass. Use it only with your own accounts, and follow each site's terms.
 
