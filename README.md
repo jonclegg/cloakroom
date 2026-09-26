@@ -47,22 +47,26 @@ From a checkout of this repo, `./cloakroom` is the same command.
 
 A cloud VM browser often looks like a bot. It shows automation fingerprints, a datacenter IP, and often a headless window. Shopping and ticket sites treat that as automation, and sign-in can stop early.
 
-Cloakroom runs headed [CloakBrowser](https://github.com/CloakHQ/CloakBrowser) (stealth Chromium) in OrbStack on your Mac. Chromium is headed on the virtual display the viewer shows. The profile stays on your machine, so the login session persists. You can set [`CLOAKROOM_PROXY`](#settings) when you want traffic to leave through a proxy, including a residential one. Grok Bot and Muse use this browser to sign in with your own account. Amazon sign-in is the flow Cloakroom ships.
+Cloakroom runs headed [CloakBrowser](https://github.com/CloakHQ/CloakBrowser) (stealth Chromium) in OrbStack on your Mac. Chromium is headed on the virtual display the viewer shows. The profile stays on your machine, so the login session persists. Grok Bot and Muse use this browser to sign in with your own account. Amazon sign-in is the flow Cloakroom ships. An optional proxy is [`CLOAKROOM_PROXY`](#settings). The product is the browser and the profile on your Mac, not a way to borrow your home IP.
+
+Grok Bot has a separate setting, **Route traffic through this computer**. When that toggle is on, the cloud browser's traffic leaves through your Mac. The browser is still stock headed Chrome. Only the egress IP changes.
 
 CloakBrowser's docs name Cloudflare Turnstile, HUMAN / PerimeterX, Akamai, DataDome, and Kasada as checks it targets. See [CloakHQ/CloakBrowser](https://github.com/CloakHQ/CloakBrowser).
 
-Homepage smoke on 2026-09-26, homepages only. The cloud browser was out-of-box Grok Bot: headed Chrome, direct datacenter egress, no proxy. Cloakroom was headed CloakBrowser on a Mac, left as it normally runs. These four homepages challenged or blocked that Grok Bot browser and loaded in Cloakroom:
+Homepage smoke on 2026-09-26, homepages only. Same twelve sites, three arms:
 
-| Site | Grok Bot, headed Chrome, no proxy | Cloakroom |
-| --- | --- | --- |
-| **Home Depot** ([homedepot.com](https://www.homedepot.com)) | 403 Access Denied | Pass |
-| **Ticketmaster** ([ticketmaster.com](https://www.ticketmaster.com)) | 403 | Pass |
-| **Sam's Club** ([samsclub.com](https://www.samsclub.com)) | HUMAN / PerimeterX press-and-hold page ("not a robot") | Pass. The storefront loaded. |
-| **Sephora** ([sephora.com](https://www.sephora.com)) | 403 Access Denied | Pass |
+- **Cloud Grok Bot.** Toggle off. Headed Chrome, direct datacenter egress (about `169.150.196.10`).
+- **Routed Grok Bot.** Toggle on. Egress through the Mac (about `97.184.95.44`).
+- **Cloakroom.** Headed CloakBrowser on the Mac, unchanged. All twelve homepages passed in both runs.
 
-Amazon, Walmart, Target, Nike, Wayfair, Chewy, Zillow, and Best Buy passed on both. No homepage in this run failed on both.
+| Site | Cloud Grok Bot | Routed Grok Bot | Cloakroom |
+| --- | --- | --- | --- |
+| **Home Depot** ([homedepot.com](https://www.homedepot.com)) | 403 Access Denied | Pass | Pass |
+| **Ticketmaster** ([ticketmaster.com](https://www.ticketmaster.com)) | 403 | Pass | Pass |
+| **Sam's Club** ([samsclub.com](https://www.samsclub.com)) | HUMAN / PerimeterX press-and-hold | Same press-and-hold challenge | Pass. The storefront loaded. |
+| **Sephora** ([sephora.com](https://www.sephora.com)) | 403 Access Denied | Pass | Pass |
 
-The same Grok Bot browser looked much cleaner behind a residential-looking proxy. Cloakroom is the stealth browser on your Mac. A shared egress tunnel does a different job.
+Amazon, Walmart, Target, Nike, Wayfair, Chewy, Zillow, and Best Buy passed in all three arms. Routing through the Mac cleared the cloud blocks on Home Depot, Ticketmaster, and Sephora. Sam's Club still showed the press-and-hold page to that stock Chrome browser. Cloakroom loaded the storefront.
 
 A homepage is not a login, a checkout, or an on-sale page. IP reputation matters as much as the fingerprint. Results change. Cloakroom doesn't guarantee any site's bot checks will pass. Use it only with your own accounts, and follow each site's terms.
 
