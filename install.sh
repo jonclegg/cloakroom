@@ -118,6 +118,52 @@ install_tree() {
   rm -rf "${tmp}"
 }
 
+cloudflared_asset() {
+  arch="$(uname -m)"
+  case "$arch" in
+    arm64) printf '%s\n' "cloudflared-darwin-arm64.tgz" ;;
+    x86_64) printf '%s\n' "cloudflared-darwin-amd64.tgz" ;;
+    *)
+      fail "No cloudflared build for ${arch}. Download one from https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/downloads/"
+      ;;
+  esac
+}
+
+install_cloudflared_binary() {
+  asset="$(cloudflared_asset)"
+  url="https://github.com/cloudflare/cloudflared/releases/latest/download/${asset}"
+  dest_dir="${HOME}/.local/bin"
+  tmp="$(mktemp -d)"
+  echo "Downloading cloudflared from Cloudflare..."
+  echo "  ${url}"
+  echo "  Docs: https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/downloads/"
+  curl -fsSL -o "${tmp}/cloudflared.tgz" "${url}"
+  tar -xzf "${tmp}/cloudflared.tgz" -C "${tmp}"
+  mkdir -p "${dest_dir}"
+  mv "${tmp}/cloudflared" "${dest_dir}/cloudflared"
+  chmod +x "${dest_dir}/cloudflared"
+  rm -rf "${tmp}"
+  PATH="${dest_dir}:${PATH}"
+  export PATH
+  echo "Installed cloudflared to ${dest_dir}/cloudflared"
+}
+
+ensure_cloudflared() {
+  if command -v cloudflared >/dev/null 2>&1; then
+    echo "cloudflared is already installed."
+    return
+  fi
+  if have_brew; then
+    echo "Installing cloudflared with Homebrew..."
+    if brew install cloudflared && command -v cloudflared >/dev/null 2>&1; then
+      echo "cloudflared is installed."
+      return
+    fi
+    echo "Homebrew did not provide cloudflared. Downloading the official binary."
+  fi
+  install_cloudflared_binary
+}
+
 link_cli() {
   target="${INSTALL_DIR}/cloakroom"
   chmod +x "${target}" "${INSTALL_DIR}/start.sh" "${INSTALL_DIR}/stop.sh" "${INSTALL_DIR}/install.sh"
@@ -143,6 +189,7 @@ if [ "$(uname)" != "Darwin" ]; then
 fi
 
 ensure_orbstack
+ensure_cloudflared
 install_tree
 link_cli
 echo "Starting Cloakroom..."
