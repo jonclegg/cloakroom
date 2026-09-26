@@ -13,8 +13,6 @@ STATE_DIR = pathlib.Path.home() / ".cloakroom"
 AMAZON_EMAIL_FILE = STATE_DIR / "amazon.json"
 AMAZON_KEYCHAIN_SERVICE = "cloakroom-amazon"
 
-MESSAGES_DB = pathlib.Path.home() / "Library" / "Messages" / "chat.db"
-
 AMAZON_HOME_URL = "https://www.amazon.com/"
 AMAZON_SIGNIN_URL = (
     "https://www.amazon.com/ap/signin"

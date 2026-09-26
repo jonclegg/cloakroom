@@ -1,8 +1,17 @@
 #!/bin/bash
 # Agent-facing entry point. First run creates cli/.venv with the Playwright client
-# (no browser download: the browser is the one running in Docker).
+# (no browser download: the browser is the one running in OrbStack).
 set -euo pipefail
-root="$(cd "$(dirname "$0")" && pwd)"
+source="${BASH_SOURCE[0]}"
+while [ -L "$source" ]; do
+  dir="$(cd "$(dirname "$source")" && pwd)"
+  source="$(readlink "$source")"
+  case "$source" in
+    /*) ;;
+    *) source="$dir/$source" ;;
+  esac
+done
+root="$(cd "$(dirname "$source")" && pwd)"
 venv="$root/cli/.venv"
 
 if [ ! -f "$venv/.installed" ]; then

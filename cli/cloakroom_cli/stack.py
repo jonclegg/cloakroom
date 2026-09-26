@@ -1,9 +1,18 @@
 import json
-import shutil
+import os
+import pathlib
 import subprocess
 import urllib.request
 
 from cloakroom_cli import config
+
+###############################################################################
+
+def docker_env():
+    env = os.environ.copy()
+    home_bin = str(pathlib.Path.home() / ".orbstack" / "bin")
+    env["PATH"] = home_bin + os.pathsep + env.get("PATH", "")
+    return env
 
 ###############################################################################
 
@@ -17,6 +26,7 @@ def health():
         ["docker", "inspect", "-f", "{{.State.Health.Status}}", config.CONTAINER_NAME],
         capture_output=True,
         text=True,
+        env=docker_env(),
     )
     if result.returncode != 0:
         return "not_running"
@@ -25,9 +35,7 @@ def health():
 ###############################################################################
 
 def docker_running():
-    if not shutil.which("docker"):
-        return False
-    return subprocess.run(["docker", "info"], capture_output=True).returncode == 0
+    return subprocess.run(["docker", "info"], capture_output=True, env=docker_env()).returncode == 0
 
 ###############################################################################
 
