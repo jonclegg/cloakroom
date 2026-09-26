@@ -43,6 +43,33 @@ From a checkout of this repo, `./cloakroom` is the same command.
 
 ---
 
+## Why Cloakroom
+
+A normal agent browser in a cloud VM looks like automation. It shows webdriver signals, a TLS fingerprint such as JA3, a datacenter IP, and often a headless window. Retail, travel, and ticket sites treat that as a bot, and the login stops early.
+
+Cloakroom runs headed [CloakBrowser](https://github.com/CloakHQ/CloakBrowser) (stealth Chromium) in OrbStack on your Mac. Chromium is headed on the virtual display the viewer shows, and the profile stays on your machine. The session looks like a real browser. Amazon login is the demo because those device checks are the kind of wall this is for. The same idea covers sites behind Cloudflare Turnstile, DataDome, Akamai, and similar checks.
+
+The sites below are examples of hard targets. Stock Playwright, a headless browser, or a browser in a datacenter VM often fails, gets challenged, or gets flagged on them. IP reputation (a datacenter address versus a home or residential one), cookies, and account history still decide a lot of what happens. Cloakroom doesn't guarantee any site's bot checks will pass.
+
+[CloakBrowser's own tests](https://github.com/CloakHQ/CloakBrowser) claim stock Playwright fails Cloudflare Turnstile, FingerprintJS, and BrowserScan, and that CloakBrowser passes those checks. That report is upstream's. Cloakroom has not re-tested these twelve sites for this page.
+
+| Site | Why a normal VM or automation browser often struggles |
+| --- | --- |
+| **Amazon** ([amazon.com](https://www.amazon.com)) | Login and account flows. Amazon's bot and device checks are the north-star demo for Cloakroom. |
+| **Ticketmaster** ([ticketmaster.com](https://www.ticketmaster.com)) | Akamai Bot Manager. Simple HTTP clients often get a 403. |
+| **Foot Locker** ([footlocker.com](https://www.footlocker.com)) | DataDome. Aggressive e-commerce bot protection. |
+| **Hermès** ([hermes.com](https://www.hermes.com)) | DataDome (`x-datadome: protected`). |
+| **Helly Hansen** ([hellyhansen.com](https://www.hellyhansen.com)) | DataDome. CloakBrowser maintainers discuss this site as a DataDome target. A residential IP still matters. |
+| **StubHub** ([stubhub.com](https://www.stubhub.com)) | DataDome. |
+| **Tripadvisor** ([tripadvisor.com](https://www.tripadvisor.com)) | DataDome. |
+| **Zillow** ([zillow.com](https://www.zillow.com)) | HUMAN / PerimeterX-style blocks (`x-px-blocked` on non-browser clients). |
+| **Expedia** ([expedia.com](https://www.expedia.com)) | Akamai. Automated clients often hit a rate or bot wall (for example 429). |
+| **Nike** ([nike.com](https://www.nike.com)) | Akamai at the edge. Checkout and login flows are famously hostile to automation. |
+| **Reddit** ([reddit.com](https://www.reddit.com)) | Blocks naive automated clients (403). |
+| **FingerprintJS Playground** ([demo.fingerprint.com/playground](https://demo.fingerprint.com/playground)) | A public detection demo. Stock Playwright is flagged there, and CloakBrowser's docs claim a pass. [browserscan.net](https://browserscan.net) is the related check in those same docs. |
+
+---
+
 ## How the code gets in
 
 Cloakroom does not read Messages, `~/Library/Messages/chat.db`, or Full Disk Access. That is the assistant's job.
