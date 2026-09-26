@@ -3,6 +3,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 bold=$'\033[1m'; green=$'\033[32m'; red=$'\033[31m'; reset=$'\033[0m'
+CLOAKROOM_INSTALL_URL="https://raw.githubusercontent.com/jonclegg/cloakroom/main/install.sh" # // pragma: allowlist secret
 
 fail() {
   echo
@@ -14,20 +15,67 @@ fail() {
 echo "${bold}Cloakroom${reset} - starting CloakBrowser"
 echo
 
-if ! command -v docker >/dev/null 2>&1; then
-  fail "Docker is not installed.
-Install Docker Desktop for Mac, open it once, then run ./start.sh again:
-  https://www.docker.com/products/docker-desktop/"
-fi
+add_orbstack_path() {
+  case ":${PATH}:" in
+    *":${HOME}/.orbstack/bin:"*) ;;
+    *) export PATH="${HOME}/.orbstack/bin:${PATH}" ;;
+  esac
+}
 
-if ! docker info >/dev/null 2>&1; then
-  fail "Docker Desktop is not running.
-Open Docker Desktop (Applications > Docker), wait until it says \"Engine running\",
-then run ./start.sh again."
+add_orbstack_path
+
+orbstack_app() {
+  [ -d /Applications/OrbStack.app ] || [ -d "${HOME}/Applications/OrbStack.app" ]
+}
+
+open_orbstack() {
+  if [ -d /Applications/OrbStack.app ]; then
+    open /Applications/OrbStack.app || echo "Waiting for OrbStack to finish starting..."
+    return
+  fi
+  open "${HOME}/Applications/OrbStack.app" || echo "Waiting for OrbStack to finish starting..."
+}
+
+if orbstack_app; then
+  if ! docker --context orbstack info >/dev/null 2>&1; then
+    echo "Starting OrbStack..."
+    open_orbstack
+    orb_bin=""
+    if [ -x /Applications/OrbStack.app/Contents/MacOS/bin/orb ]; then
+      orb_bin="/Applications/OrbStack.app/Contents/MacOS/bin/orb"
+    elif [ -x "${HOME}/Applications/OrbStack.app/Contents/MacOS/bin/orb" ]; then
+      orb_bin="${HOME}/Applications/OrbStack.app/Contents/MacOS/bin/orb"
+    fi
+    if [ -n "$orb_bin" ]; then
+      "$orb_bin" start >/dev/null 2>&1 || echo "Waiting for OrbStack to finish starting..."
+    fi
+    ready=""
+    for _ in $(seq 1 120); do
+      add_orbstack_path
+      if docker --context orbstack info >/dev/null 2>&1; then
+        ready=yes
+        break
+      fi
+      sleep 2
+    done
+    if [ -z "${ready}" ]; then
+      fail "OrbStack did not become ready.
+Open OrbStack from Applications and finish its setup, then run this again.
+  https://orbstack.dev/download"
+    fi
+  fi
+  docker context use orbstack >/dev/null
+  echo "Using OrbStack."
+elif ! command -v docker >/dev/null 2>&1 || ! docker info >/dev/null 2>&1; then
+  fail "OrbStack is not installed, and no container engine is running.
+On a Mac, install Cloakroom with one command:
+  curl -fsSL ${CLOAKROOM_INSTALL_URL} | sh
+Or install OrbStack, open it, then run this again:
+  https://orbstack.dev/download"
 fi
 
 if ! docker compose version >/dev/null 2>&1; then
-  fail "Your Docker is missing 'docker compose'. Update Docker Desktop to the latest version."
+  fail "This container engine is missing 'docker compose'. Update OrbStack and run this again."
 fi
 
 if [ ! -f .env ]; then

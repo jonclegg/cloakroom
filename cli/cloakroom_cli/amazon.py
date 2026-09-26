@@ -5,7 +5,7 @@ from playwright.sync_api import sync_playwright
 
 from cloakroom_cli import config
 from cloakroom_cli import creds
-from cloakroom_cli import imessage
+from cloakroom_cli import otp
 
 EMAIL_INPUTS = ("#ap_email", "#ap_email_login", "input[type='email']")
 OTP_INPUTS = (
@@ -20,6 +20,7 @@ OTP_SUBMITS = ("#auth-signin-button", "#cvf-submit-otp-button input", "#cvf-subm
 CONTINUE_BUTTONS = ("#continue input[type='submit']", "#continue")
 SEND_CODE_BUTTONS = ("#auth-send-code",) + CONTINUE_BUTTONS
 SMS_CHOICES = ("input[type='radio'][value*='SMS']", "input[type='radio'][value*='sms']")
+OTP_PAUSE_SECONDS = 5
 
 ###############################################################################
 
@@ -97,17 +98,52 @@ def do_choose_device(page, emit):
 
 ###############################################################################
 
-def do_otp(page, emit, service, otp_timeout, since):
-    emit("otp_page", detail="Waiting for the code to arrive in Messages.")
-    code = imessage.wait_for_code(service, otp_timeout, since_mac_ns=since)
-    if not code:
-        emit("otp_timeout", detail=f"No matching code arrived in Messages within {otp_timeout}s.")
-        return False
+def fill_otp(page, emit, code):
     type_human(page, first_present(page, OTP_INPUTS), code)
     if page.query_selector("input[name='rememberDevice']"):
         page.check("input[name='rememberDevice']")
-    emit("otp_filled", detail="Code read from Messages and submitted.")
+    emit("otp_filled", detail="Code submitted.")
     click_or_enter(page, OTP_SUBMITS)
+
+###############################################################################
+
+def otp_wait_detail(inbox):
+    return (
+        "Amazon is asking for a code. "
+        f"POST {{\"code\":\"...\"}} to {inbox.submit_url}. "
+        "Grok Bot or Muse reads Messages and submits it. "
+        "You can also type the code in the viewer."
+    )
+
+###############################################################################
+
+def handle_otp(page, emit, inbox, state, otp_timeout):
+    now = time.monotonic()
+    if now < state["otp_pause_until"]:
+        return True
+    code = inbox.take()
+    if code:
+        fill_otp(page, emit, code)
+        state["otp_waiting"] = False
+        state["otp_timed_out"] = False
+        state["otp_pause_until"] = time.monotonic() + OTP_PAUSE_SECONDS
+        return True
+    if not state["otp_waiting"]:
+        state["otp_waiting"] = True
+        state["otp_deadline"] = time.monotonic() + otp_timeout
+        state["otp_timed_out"] = False
+        emit("waiting_for_otp", submit_url=inbox.submit_url, detail=otp_wait_detail(inbox))
+        return True
+    if not state["otp_timed_out"] and now > state["otp_deadline"]:
+        state["otp_timed_out"] = True
+        emit(
+            "otp_timeout",
+            submit_url=inbox.submit_url,
+            detail=(
+                f"No code was provided within {otp_timeout}s. "
+                f"POST it to {inbox.submit_url}, or type it in the viewer."
+            ),
+        )
     return True
 
 ###############################################################################
@@ -121,9 +157,12 @@ def open_page(playwright):
 
 ###############################################################################
 
-def step_once(page, emit, step, secrets, state, otp_service, otp_timeout):
+def step_once(page, emit, step, secrets, state, inbox, otp_timeout):
     email, password = secrets
-    # Auto-fill credentials once; a repeat means Amazon rejected them, so hand over to the user.
+    if step != "otp":
+        state["otp_waiting"] = False
+        state["otp_timed_out"] = False
+        state["otp_pause_until"] = 0
     if step in state["filled"]:
         return False
     if step == "email" and email:
@@ -132,31 +171,14 @@ def step_once(page, emit, step, secrets, state, otp_service, otp_timeout):
         return True
     if step == "password" and password:
         state["filled"].add("password")
-        state["otp_since"] = imessage.now_mac_ns()
         do_password(page, emit, password)
         return True
     if step == "choose_device":
-        state["otp_since"] = imessage.now_mac_ns()
+        state["filled"].add("choose_device")
         do_choose_device(page, emit)
         return True
-    if step == "otp" and state["messages_access"] != "ok":
-        if not state["otp_hint_sent"]:
-            state["otp_hint_sent"] = True
-            if state["messages_access"] == "mac_only":
-                detail = "iMessage 2FA capture is Mac only. Type the code in the viewer."
-            else:
-                detail = "Cloakroom can't read Messages (run ./cloakroom messages-access). Type the code in the viewer."
-            emit(
-                "waiting_for_user",
-                step="otp",
-                messages_access=state["messages_access"],
-                detail=detail,
-            )
-        return True
     if step == "otp":
-        submitted = do_otp(page, emit, otp_service, otp_timeout, state["otp_since"])
-        state["otp_since"] = imessage.now_mac_ns()
-        return submitted
+        return handle_otp(page, emit, inbox, state, otp_timeout)
     return False
 
 ###############################################################################
@@ -169,14 +191,22 @@ WAITING_HINTS = {
 
 ###############################################################################
 
-def run(emit, otp_service="amazon", otp_timeout=180, total_timeout=300):
-    secrets = creds.amazon()
-    state = {
-        "otp_since": imessage.now_mac_ns(),
+def fresh_state():
+    return {
         "filled": set(),
-        "messages_access": imessage.check_access(),
-        "otp_hint_sent": False,
+        "otp_waiting": False,
+        "otp_deadline": 0,
+        "otp_timed_out": False,
+        "otp_pause_until": 0,
     }
+
+###############################################################################
+
+def run(emit, otp_timeout=180, total_timeout=300, otp_code=None):
+    secrets = creds.amazon()
+    inbox = otp.Inbox(preset=otp_code)
+    inbox.start()
+    state = fresh_state()
     with sync_playwright() as playwright:
         page = open_page(playwright)
         emit("browser_connected", detail=f"Watch along at {config.VIEWER_URL}")
@@ -193,7 +223,7 @@ def run(emit, otp_service="amazon", otp_timeout=180, total_timeout=300):
             if step == "done":
                 emit("success", detail="Logged in to Amazon. The session is saved in the Cloakroom profile.")
                 return True
-            acted = step_once(page, emit, step, secrets, state, otp_service, otp_timeout)
+            acted = step_once(page, emit, step, secrets, state, inbox, otp_timeout)
             if not acted and step != last_step and step in WAITING_HINTS:
                 emit("waiting_for_user", step=step, detail=WAITING_HINTS[step])
             last_step = step
