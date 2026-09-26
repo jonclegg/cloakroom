@@ -45,28 +45,21 @@ From a checkout of this repo, `./cloakroom` is the same command.
 
 ## Why Cloakroom
 
-A normal agent browser in a cloud VM looks like automation. It shows webdriver signals, a TLS fingerprint such as JA3, a datacenter IP, and often a headless window. Retail, travel, and ticket sites treat that as a bot, and the login stops early.
+A cloud VM browser often looks like a bot. It shows automation fingerprints, a datacenter IP, and often a headless window. Shopping and ticket sites treat that as automation, and sign-in can stop early.
 
-Cloakroom runs headed [CloakBrowser](https://github.com/CloakHQ/CloakBrowser) (stealth Chromium) in OrbStack on your Mac. Chromium is headed on the virtual display the viewer shows, and the profile stays on your machine. The session looks like a real browser. That is what Grok Bot and Muse drive for Amazon sign-in, Cloakroom's main flow. Amazon shows a robot check when sign-in comes from a datacenter IP and an automation browser.
+Cloakroom runs headed [CloakBrowser](https://github.com/CloakHQ/CloakBrowser) (stealth Chromium) in OrbStack on your Mac. Chromium is headed on the virtual display the viewer shows. The profile stays on your machine, so the login session persists. You can set [`CLOAKROOM_PROXY`](#settings) when you want traffic to leave through a proxy, including a residential one. Grok Bot and Muse use this browser to sign in with your own account. Amazon sign-in is the flow Cloakroom ships.
 
-The sites below are examples. **Verified** means we loaded that page and recorded the response. **Research** means the protection is described publicly, and Cloakroom was not retested for this page. A homepage status is only a homepage status.
+CloakBrowser's docs name Cloudflare Turnstile, HUMAN / PerimeterX, Akamai, DataDome, and Kasada as checks it targets. See [CloakHQ/CloakBrowser](https://github.com/CloakHQ/CloakBrowser).
 
-| Site | What gets in the way | What we saw |
+Agents also open shopping and ticket homepages: Amazon, Home Depot, Walmart, Target, Nike, Ticketmaster, Wayfair, Sephora, Chewy, Zillow, and Best Buy. A homepage smoke on 2026-09-26 passed on both headed Chrome in the VM and Cloakroom for those sites. Target's first VM load crashed; the retry passed.
+
+The only homepage that differed in that run was Sam's Club:
+
+| Site | Headed Chrome in the VM | Cloakroom |
 | --- | --- | --- |
-| **Amazon** ([amazon.com](https://www.amazon.com)) | Robot check on sign-in from a datacenter IP plus automation | Cloakroom's primary flow |
-| **Home Depot** ([homedepot.com](https://www.homedepot.com)) | Akamai, plus HUMAN | Verified. Datacenter VM: 403 from AkamaiGHost. Cloakroom homepage: 200. |
-| **Walmart** ([walmart.com](https://www.walmart.com)) | Akamai and HUMAN | Verified. Cloakroom homepage: 200, and the page came back clean. |
-| **Target** ([target.com](https://www.target.com)) | HUMAN / PerimeterX | Verified. Cloakroom homepage: 200. |
-| **Nike** ([nike.com](https://www.nike.com)) | Kasada and Akamai | Verified. Cloakroom US homepage: 200. |
-| **Ticketmaster** ([ticketmaster.com](https://www.ticketmaster.com)) | Akamai | Verified. Datacenter VM: 403. Cloakroom homepage: 200. |
-| **Wayfair** ([wayfair.com](https://www.wayfair.com)) | Cloudflare and HUMAN | Verified on the datacenter VM: 429. Cloakroom was not retested. |
-| **Sam's Club** ([samsclub.com](https://www.samsclub.com)) | Human check | Verified on the datacenter VM: it sent `/are-you-human`. |
-| **Sephora** ([sephora.com](https://www.sephora.com)) | Akamai Bot Manager | Research. Not retested here. |
-| **Chewy** ([chewy.com](https://www.chewy.com)) | Kasada and Akamai | Research. Not retested here. |
-| **Zillow** ([zillow.com](https://www.zillow.com)) | HUMAN (`px-captcha`) | Verified on the datacenter VM: 403. |
-| **Best Buy** ([bestbuy.com](https://www.bestbuy.com)) | Akamai / TLS | Research. The datacenter VM often times out. |
+| **Sam's Club** ([samsclub.com](https://www.samsclub.com)) | Challenge. A HUMAN / PerimeterX press-and-hold page. | Pass. The storefront loaded. |
 
-This list is not a guarantee. IP reputation matters as much as the fingerprint. Helly Hansen is the counterexample: DataDome returned 403 on both the datacenter VM and Cloakroom. A homepage response does not speak for login, checkout, or an on-sale page. Defenses change. Use Cloakroom only with your own accounts, and follow each site's terms.
+A homepage is not a login, a checkout, or an on-sale page. IP reputation matters as much as the fingerprint. Results change. Cloakroom doesn't guarantee any site's bot checks will pass. Use it only with your own accounts, and follow each site's terms.
 
 ---
 
