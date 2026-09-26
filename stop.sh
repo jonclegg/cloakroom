@@ -9,4 +9,4 @@ fi
 
 docker compose --profile examples down
 echo
-echo "Cloakroom stopped. Your browser profile is saved; ./start.sh brings it back."
+echo "Cloakroom stopped. Your browser profile is saved; ./cloakroom start brings it back."

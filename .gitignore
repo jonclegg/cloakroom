@@ -15,6 +15,7 @@ __pycache__/
 *.pyc
 .venv/
 venv/
+cli/.venv/
 
 # Cursor worktrees / uploads
 .cursor/

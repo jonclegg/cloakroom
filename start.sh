@@ -62,8 +62,8 @@ cat <<EOF
 ${green}${bold}You're ready!${reset}
 
   See the browser:    ${viewer_url}
-  Try an example:     docker compose run --rm hello
-  Stop everything:    ./stop.sh
+  Log in to Amazon:   ./cloakroom amazon-login   (or ask your agent: "Login to Amazon with cloakroom")
+  Stop everything:    ./cloakroom stop
 
   For scripts (Playwright, Puppeteer): ${cdp_url}
   Only this computer can connect. Your logins are kept between restarts.
