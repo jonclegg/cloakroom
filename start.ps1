@@ -51,7 +51,7 @@ for ($i = 0; $i -lt 90; $i++) {
 
 if ($status -ne "healthy") {
     docker compose logs --tail 40 cloakroom
-    Fail "The browser did not become ready (status: $status). See the log above, or README > Troubleshooting."
+    Fail "The browser did not become ready (status: $status). See the log above, or skills/cloakroom/SKILL.md > Troubleshooting."
 }
 
 $viewerUrl = "http://" + (docker compose port cloakroom 6080)

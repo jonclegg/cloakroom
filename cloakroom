@@ -9,12 +9,48 @@ while [ -L "$source" ]; do
     *) source="$dir/$source" ;;
   esac
 done
-root="$(cd "$(dirname "$source")" && pwd)"
+source "$(cd "$(dirname "$source")" && pwd)/lib.sh"
 
-if ! command -v python3 >/dev/null 2>&1; then
-  echo "Cloakroom needs python3. On a Mac run: xcode-select --install" >&2
-  exit 1
-fi
+usage() {
+  cat >&2 <<EOF
+Usage: cloakroom <command> [--json]
 
-export PYTHONPATH="$root/cli"
-exec python3 -m cloakroom_cli "$@"
+  start          Start the stealth browser.
+  stop           Stop it (the profile is kept).
+  status         Is it ready, and the viewer, CDP, and share URLs.
+  share          Private HTTPS link to the viewer. No confirmation.
+  unshare        Stop that link.
+EOF
+  exit 2
+}
+
+status() {
+  docker_running=false
+  docker info >/dev/null 2>&1 && docker_running=true
+  container="$(health)"
+  browser=""
+  [ "$container" = healthy ] && browser="$(curl -fsS --max-time 10 "${CDP_URL}/json/version" | sed -n 's/.*"Browser": *"\([^"]*\)".*/\1/p')"
+  share_url="$(active_share_url)"
+  if [ "${1:-}" = --json ]; then
+    printf '{"docker_running":%s,"container":"%s","ready":%s,"browser":%s,"cdp_url":"%s","viewer_url":"%s","share_url":%s}\n' \
+      "$docker_running" "$container" "$([ "$container" = healthy ] && echo true || echo false)" \
+      "$([ -n "$browser" ] && echo "\"$browser\"" || echo null)" "$CDP_URL" "$VIEWER_URL" \
+      "$([ -n "$share_url" ] && echo "\"$share_url\"" || echo null)"
+    return 0
+  else
+    printf 'Docker running:    %s\nContainer:         %s\nBrowser:           %s\nViewer:            %s\nShare:             %s\nCDP:               %s\n' \
+      "$docker_running" "$container" "${browser:--}" "$VIEWER_URL" "${share_url:--}" "$CDP_URL"
+  fi
+  [ "$container" = healthy ]
+}
+
+command="${1:-}"
+[ $# -gt 0 ] && shift
+case "$command" in
+  start) exec bash "${CLOAKROOM_ROOT}/start.sh" ;;
+  stop) exec bash "${CLOAKROOM_ROOT}/stop.sh" ;;
+  status) status "$@" ;;
+  share) exec bash "${CLOAKROOM_ROOT}/share.sh" "$@" ;;
+  unshare) exec bash "${CLOAKROOM_ROOT}/share.sh" stop "$@" ;;
+  *) usage ;;
+esac

@@ -166,7 +166,7 @@ ensure_cloudflared() {
 
 link_cli() {
   target="${INSTALL_DIR}/cloakroom"
-  chmod +x "${target}" "${INSTALL_DIR}/start.sh" "${INSTALL_DIR}/stop.sh" "${INSTALL_DIR}/install.sh"
+  chmod +x "${target}" "${INSTALL_DIR}/start.sh" "${INSTALL_DIR}/stop.sh" "${INSTALL_DIR}/share.sh" "${INSTALL_DIR}/install.sh"
   if ln -sf "${target}" /usr/local/bin/cloakroom 2>/dev/null; then
     echo "Installed cloakroom. Open a terminal and run: cloakroom"
     return
@@ -185,7 +185,7 @@ link_cli() {
 }
 
 if [ "$(uname)" != "Darwin" ]; then
-  fail "This installer is for a Mac. On Windows, use start.ps1 (see the README)."
+  fail "This installer is for a Mac. On Windows, use start.ps1 (see skills/cloakroom/SKILL.md > Windows)."
 fi
 
 ensure_orbstack

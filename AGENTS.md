@@ -1,6 +1,6 @@
 # Agent instructions
 
-Cloakroom is a stealth browser (CloakBrowser in OrbStack) on the user's Mac, with a persistent profile, that you drive over CDP. Use it when a site blocks your cloud browser, when you need cookies and logins to persist between runs, or when the user asks you to do something "with cloakroom". Follow [`skills/cloakroom/SKILL.md`](skills/cloakroom/SKILL.md).
+Cloakroom is a stealth browser (CloakBrowser in OrbStack) on the user's Mac, with a persistent profile, that you drive over CDP. Use it when a site blocks your cloud browser, when you need cookies and logins to persist between runs, or when the user asks you to do something "with cloakroom". Follow [`skills/cloakroom/SKILL.md`](skills/cloakroom/SKILL.md). It is the full reference (commands, JSON output, settings, troubleshooting, Windows, internals); the README is only a short human quickstart.
 
 Short version:
 

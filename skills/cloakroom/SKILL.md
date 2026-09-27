@@ -5,8 +5,19 @@ description: Drive a stealth CloakBrowser running under OrbStack on the user's M
 
 # Cloakroom skill
 
-Cloakroom is a local CLI: `cloakroom`, or `./cloakroom` from this repo.
+Cloakroom is a local CLI: `cloakroom`, or `./cloakroom` from this repo. It is plain bash (no Python needed on the host).
 It controls a stealth Chromium in OrbStack (`cloakhq/cloakbrowser`). The browser, the viewer, and the saved profile stay on the machine.
+
+```text
+Your agent ──► cloakroom ───────────────► start / stop / status / share
+     │
+     └───────► CDP  http://127.0.0.1:9222 ─► CloakBrowser, headed, in OrbStack on the Mac
+                                              ├─ saved profile: cookies and logins persist
+                                              └─ viewer: http://127.0.0.1:6080
+                                                   └─ cloakroom share ──► private HTTPS link (phone)
+```
+
+The browser keeps running in the background (as long as OrbStack runs) until `cloakroom stop`. Stopping keeps the profile.
 
 ## Playbook
 
@@ -24,9 +35,16 @@ It controls a stealth Chromium in OrbStack (`cloakhq/cloakbrowser`). The browser
 2. **Drive the browser over CDP**
 
    ```python
-   browser = pw.chromium.connect_over_cdp("http://127.0.0.1:9222")
-   page = browser.contexts[0].new_page()
+   from playwright.sync_api import sync_playwright
+
+   with sync_playwright() as pw:
+       browser = pw.chromium.connect_over_cdp("http://127.0.0.1:9222")
+       page = browser.contexts[0].new_page()
+       page.goto("https://www.homedepot.com")
+       print(page.title())
    ```
+
+   [`examples/hello.py`](../../examples/hello.py) is the smallest example. Puppeteer or any tool that attaches to an existing Chrome works too.
 
    If Playwright isn't installed, `pip install playwright` is enough. Skip `playwright install`: you attach to the running browser, so no browser download is needed.
 
@@ -60,9 +78,18 @@ That one command starts the browser if it is not already running, then starts a 
 
 Do **not** use Tailscale. Do **not** Funnel or port-forward 6080 or 9222 yourself. The only remote path is `cloakroom share`, and it tunnels the viewer only. Never point a tunnel at port 9222. Do not add an approval gate of your own.
 
-## Other commands
+## Commands
 
-- `cloakroom stop` stops the browser. The profile is kept.
+Every command takes `--json`.
+
+| Command | What it does |
+| --- | --- |
+| `cloakroom start` / `stop` | Start or stop the browser. The profile is kept. |
+| `cloakroom status --json` | Is OrbStack up, is the browser ready, and the viewer, CDP, and share URLs. Exits non-zero in text mode when not ready. |
+| `cloakroom share --json` | Start a private HTTPS link to the viewer and print it. |
+| `cloakroom unshare` | Stop that link. It stops working immediately. |
+
+`start` / `stop` run [`start.sh`](../../start.sh) / [`stop.sh`](../../stop.sh), which also work on their own. `share` / `unshare` run [`share.sh`](../../share.sh).
 
 ## Rules
 
@@ -71,3 +98,66 @@ Do **not** use Tailscale. Do **not** Funnel or port-forward 6080 or 9222 yoursel
 - Ports 9222 and 6080 stay on `127.0.0.1`.
 - Remote viewer access is one command: `cloakroom share`. Run it and send the URL immediately. Do not ask for approval first, and do not add a confirmation step. The URL is a secret capability link. Run `cloakroom unshare` when the user is done. Do not use Tailscale, Funnel, or port forwards. Never tunnel 9222.
 - Don't bypass CAPTCHAs. When a page shows a puzzle, the user finishes it in the viewer.
+
+## Reference
+
+### Install
+
+`install.sh` (Mac only): installs OrbStack with Homebrew (or opens https://orbstack.dev/download and waits for it in Applications), installs `cloudflared` (Homebrew, else the official binary into `~/.local/bin`), downloads Cloakroom to `~/.cloakroom/app`, links `cloakroom` onto the PATH, and runs `cloakroom start`. Apple Silicon runs natively.
+
+### Settings
+
+Optional knobs live in `.env` (created from [`.env.example`](../../.env.example) on first start): license key, proxy, fingerprint seed, and ports. Edit `.env`, then `cloakroom stop` and `cloakroom start`. If you change `CLOAKROOM_CDP_PORT` / `CLOAKROOM_VIEWER_PORT`, export the same variables when running `cloakroom`.
+
+### Limits
+
+- No site is guaranteed. Bot checks change. A loaded homepage is not a login or a checkout.
+- Traffic leaves from the Mac's connection or `CLOAKROOM_PROXY`. A flagged IP, VPN, or datacenter proxy can still be challenged.
+- Grok Bot's **Route traffic through this computer** setting alone clears many IP blocks. Cloakroom is for sites that also fingerprint the browser (e.g. Sam's Club's press-and-hold page), or when the user wants a persistent local profile they can watch.
+- Cloakroom has no site-specific scripts. Use it only with the user's own accounts and within each site's terms.
+
+### Security
+
+- Port 9222 is full control of a signed-in browser, and the viewer has no password. Neither is published beyond `127.0.0.1`.
+- The profile lives in the `profile` Docker volume. `docker compose down -v` deletes it and signs the user out of everything.
+- Cloakroom does not store passwords or codes. `.env` (license key, proxy password) is git-ignored.
+
+### Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| "OrbStack did not become ready" | User opens OrbStack from Applications, finishes first-run setup (may ask for the Mac password), then `cloakroom start`. |
+| "permission denied: ./cloakroom" | `chmod +x cloakroom start.sh stop.sh share.sh install.sh`, or `bash cloakroom …`. |
+| "port is already allocated" | Something else uses 9222 or 6080 (often a Chrome with remote debugging). Close it, or change the ports in `.env`. |
+| "cloudflared is not installed" | `brew install cloudflared`, or download from https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/downloads/ and put it on the PATH. |
+| Tabs crash ("Aw, Snap!") or slow | Quit heavy apps and `cloakroom start`. Memory settings are in the OrbStack app. |
+| "License" / "concurrent session" errors | A free key allows one session at a time. Stop other CloakBrowser sessions (including `examples/cloaktest.sh`) or blank the key. |
+| Need logs | `docker compose logs -f cloakroom` from the repo. |
+
+### Windows
+
+Browser and viewer run on Windows with Docker Desktop (WSL 2); the one-line installer is Mac-only.
+
+1. Install [Docker Desktop](https://www.docker.com/products/docker-desktop/), restart, wait for **Engine running**.
+2. Get the repo (Download ZIP or `git clone`).
+3. In PowerShell in the repo: `powershell -ExecutionPolicy Bypass -File .\start.ps1`
+4. Test: `docker compose run --rm hello` prints example.com's title.
+5. Stop: `powershell -ExecutionPolicy Bypass -File .\stop.ps1`
+
+For the phone viewer: `winget install --id Cloudflare.cloudflared`, then `cloakroom share` from Git Bash.
+
+### Internals
+
+- **`cloakroom` container:** official `cloakhq/cloakbrowser` plus x11vnc and noVNC ([`image/Dockerfile`](../../image/Dockerfile)). Runs [`cloakserve`](https://github.com/CloakHQ/CloakBrowser#cdp-server-mode) headed on a virtual display (passes more bot checks; it's what the viewer shows). `shm_size: 2gb` (Chromium crashes at the 64 MB default). Healthcheck on `/json/version`.
+- **Volumes:** `profile` (cookies and logins) and `binary-cache` (licensed binary, downloaded once). [`image/cloakroom-serve.sh`](../../image/cloakroom-serve.sh) keeps `cloakserve` from deleting the profile on exit.
+- **Extra identities:** add `?fingerprint=<seed>` to the CDP URL, e.g. `http://127.0.0.1:9222?fingerprint=11111&timezone=Europe/Berlin`. Only the default identity is saved to `profile`. See the [upstream docs](https://github.com/CloakHQ/CloakBrowser#cdp-server-mode).
+- **Stealth test:** `./examples/cloaktest.sh` runs upstream's bot-detection suite with the `.env` settings.
+- **Updates:** `cloakroom start` always pulls the latest `cloakhq/cloakbrowser`. To pin, change `FROM cloakhq/cloakbrowser:latest` in `image/Dockerfile` to a tag like `0.5.11`.
+- **Plain Compose:** `cp .env.example .env && docker compose up -d --build`, then `docker compose down`.
+
+### Links
+
+- CloakBrowser: https://github.com/CloakHQ/CloakBrowser (targets Cloudflare Turnstile, HUMAN / PerimeterX, Akamai, DataDome, Kasada)
+- Free license key: https://cloakbrowser.dev/free
+- Docker image: https://hub.docker.com/r/cloakhq/cloakbrowser
+- OrbStack: https://orbstack.dev/
