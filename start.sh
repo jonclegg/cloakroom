@@ -110,10 +110,10 @@ cat <<EOF
 ${green}${bold}You're ready!${reset}
 
   See the browser:    ${viewer_url}
-  Log in to Amazon:   ./cloakroom amazon-login   (or ask your agent: "Login to Amazon with cloakroom")
+  Agents and scripts: ${cdp_url}   (Playwright, Puppeteer, or open this folder in your agent)
+  Watch from a phone: ./cloakroom share
   Stop everything:    ./cloakroom stop
 
-  For scripts (Playwright, Puppeteer): ${cdp_url}
   Only this computer can connect. Your logins are kept between restarts.
 
 EOF
