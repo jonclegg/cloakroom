@@ -1,6 +1,6 @@
 # Cloakroom
 
-**A stealth browser on your Mac for AI agents: fewer bot walls, and logins that stick.**
+**A stealth browser on your Mac for AI agents. It gets into the sites that block cloud browsers, and your logins stick.**
 
 ## Quickstart
 
@@ -18,14 +18,24 @@ Cloud agents browse from datacenter servers. Big sites see a datacenter IP and a
 
 Cloakroom brings the browser home. It runs [CloakBrowser](https://github.com/CloakHQ/CloakBrowser), a stealth build of Chromium, on your own Mac with one saved profile. Your agent drives it from wherever it runs.
 
+## Where cloud agents get blocked, Cloakroom gets in
+
+On September 26, 2026, a typical cloud agent browser (Grok Bot, browsing from a datacenter) was sent to the homepages of some of the biggest names online. Twelve of them turned it away with an access-denied page or a bot challenge. Cloakroom, running on a Mac, walked into every one:
+
+- **Shopping:** Home Depot, Sam's Club, Sephora, Etsy, Newegg, Fanatics, Vinted
+- **Tickets and travel:** Ticketmaster, American Airlines, Tripadvisor
+- **Jobs:** Indeed, Glassdoor
+
+Twelve for twelve. These are the sites people actually want an agent to shop, book, and search on, and exactly the ones that shut a datacenter browser out.
+
+Some of that win comes from leaving through a home connection instead of a datacenter. The rest is the browser: Sam's Club still challenged ordinary Chrome routed through the same Mac, and Cloakroom loaded the storefront. This was a homepage check, not logins or checkouts, and sites change their defenses often.
+
 ## What you get
 
 - **Harder to detect.** A stealth browser on your own connection, not an automated browser in a datacenter.
 - **Sessions that persist.** Sign in once. Cookies and logins stay in the profile across runs and restarts.
 - **You can watch and help.** Open the live viewer on your Mac, or have your agent run `cloakroom share` to get a private link for your phone. Click, type, or sign in when the agent gets stuck.
 - **Standard CDP.** Playwright, Puppeteer, or anything else that speaks the Chrome DevTools Protocol connects to `127.0.0.1:9222`. No SDK.
-
-**Proof:** on September 26, 2026, a cloud browser was blocked on twelve big homepages (Home Depot, Ticketmaster, Sam's Club, and others). Cloakroom loaded all twelve.
 
 ## Good to know
 
