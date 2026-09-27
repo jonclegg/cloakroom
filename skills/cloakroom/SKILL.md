@@ -1,6 +1,6 @@
 ---
 name: cloakroom
-description: Log in to websites (Amazon first) in a stealth CloakBrowser running under OrbStack on the user's Mac. When Amazon asks for a code, you (Grok Bot or Muse) read it from Messages and pass it to Cloakroom. When the user wants the viewer on a phone or away from home, run `cloakroom share` and send the HTTPS URL immediately. Do not ask them to confirm. Do not use Tailscale. Use when the user says "login to Amazon with cloakroom", "use cloakroom", "share the viewer", or asks to sign in to a site with a stealth/persistent browser.
+description: Drive a stealth CloakBrowser running under OrbStack on the user's Mac when a site blocks your cloud browser. Browse and sign in over CDP with a persistent profile; `amazon-login` is a built-in example flow. When a site asks for a code, you (Grok Bot or Muse) read it from Messages and enter it; Cloakroom never reads Messages. When the user wants the viewer on a phone or away from home, run `cloakroom share` and send the HTTPS URL immediately. Do not ask them to confirm. Do not use Tailscale. Use when the user says "use cloakroom", "login to <site> with cloakroom", "share the viewer", when a site bot-walls your cloud browser, or when the user asks to sign in to a site with a stealth/persistent browser.
 ---
 
 # Cloakroom skill
@@ -8,13 +8,17 @@ description: Log in to websites (Amazon first) in a stealth CloakBrowser running
 Cloakroom is a local CLI: `cloakroom`, or `./cloakroom` from this repo.
 It controls a stealth Chromium in OrbStack (`cloakhq/cloakbrowser`). The browser, the viewer, and the saved login stay on the machine.
 
-**You fetch the iMessage OTP. Cloakroom does not.** Cloakroom never reads Messages, `chat.db`, or Full Disk Access. When Amazon asks for a code, you (Grok Bot or Muse) read Messages, extract the code, and hand it to Cloakroom.
+**You fetch two-factor codes. Cloakroom does not.** Cloakroom never reads Messages, `chat.db`, or Full Disk Access. When any site asks for a code, you (Grok Bot or Muse) read Messages, extract the code, and enter it: type it through your own Playwright session, or hand it to the built-in flow's `submit_url`.
 
-## Trigger
+## Any site
+
+1. `cloakroom status --json`, and `cloakroom start` if `ready` is `false`.
+2. Connect Playwright to `http://127.0.0.1:9222` with `connect_over_cdp` and use `browser.contexts[0]`, which is the persistent, logged-in profile. `browser.close()` only disconnects you.
+3. If the site needs the user (password, puzzle, unfamiliar step), point them to the viewer at http://127.0.0.1:6080, or run `cloakroom share` if they're away from the Mac. Never ask for the password in chat.
+
+## Built-in example: Amazon
 
 User: **"Login to Amazon with cloakroom"** (or "sign in to Amazon using cloakroom", "use cloakroom for Amazon").
-
-## Playbook
 
 1. **Check readiness**
 
@@ -98,13 +102,12 @@ That one command starts the browser if it is not already running, then starts a 
 
 Do **not** use Tailscale. Do **not** Funnel or port-forward 6080 or 9222 yourself. The only remote path is `cloakroom share`, and it tunnels the viewer only. Never point a tunnel at port 9222. Do not add an approval gate of your own.
 
-Amazon login is unchanged. On `waiting_for_otp`, read Messages and POST the code to `submit_url` on `127.0.0.1`. Do not send the code to the share URL.
+Sharing doesn't change how codes are entered. In the Amazon flow, on `waiting_for_otp`, read Messages and POST the code to `submit_url` on `127.0.0.1`. Do not send the code to the share URL.
 
 ## Other commands
 
 - `cloakroom creds set` stores the Amazon email and password in the macOS Keychain. **The user runs this in their own terminal**, since it prompts for the password.
 - `cloakroom stop` stops the browser. The session is kept.
-- Scripting other sites: connect Playwright to `http://127.0.0.1:9222` with `connect_over_cdp` and use `browser.contexts[0]`, which is the persistent profile. Cloakroom's built-in code handoff is `amazon-login`.
 
 ## Rules
 
