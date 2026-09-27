@@ -18,4 +18,8 @@ Binary License. Cloakroom is an independent community project and is not
 affiliated with or endorsed by CloakHQ.
 
 The optional in-browser viewer uses noVNC (MPL-2.0), websockify (LGPL-3.0),
-and x11vnc (GPL-2.0), installed unmodified from Debian packages at build time.
+and x11vnc (GPL-2.0), installed from Debian packages at build time.
+websockify and x11vnc are unmodified. noVNC is unmodified except that the
+build adds one hidden element to its vnc.html (see image/Dockerfile) so
+browsers holding a cached older noVNC script still load. noVNC's vnc.html is
+BSD-2-Clause per its file header; the rest of noVNC is MPL-2.0.
