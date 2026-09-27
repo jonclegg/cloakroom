@@ -47,7 +47,7 @@ From a checkout of this repo, `./cloakroom` is the same command.
 
 A cloud VM browser often looks like a bot. It shows automation fingerprints, a datacenter IP, and often a headless window. Shopping and ticket sites treat that as automation, and sign-in can stop early.
 
-Cloakroom runs headed [CloakBrowser](https://github.com/CloakHQ/CloakBrowser) (stealth Chromium) in OrbStack on your Mac. Chromium is headed on the virtual display the viewer shows. The profile stays on your machine, so the login session persists. Grok Bot and Muse use this browser to sign in with your own account. Amazon sign-in is the flow Cloakroom ships. An optional proxy is [`CLOAKROOM_PROXY`](#settings). The product is the browser and the profile on your Mac, not a way to borrow your home IP.
+Cloakroom runs headed [CloakBrowser](https://github.com/CloakHQ/CloakBrowser) (stealth Chromium) in OrbStack on your Mac. Chromium is headed on the virtual display the viewer shows. The profile stays on your machine, so the login session persists. Grok Bot and Muse use this browser to sign in with your own account. Amazon sign-in is the flow Cloakroom ships. An optional proxy is `CLOAKROOM_PROXY` in `.env` (see `.env.example`). The product is the browser and the profile on your Mac, not a way to borrow your home IP.
 
 Grok Bot has a separate setting, **Route traffic through this computer**. When that toggle is on, the cloud browser's traffic leaves through your Mac. The browser is still stock headed Chrome. Only the egress IP changes. In an earlier homepage pass the same day, that toggle cleared many datacenter blocks on stock Chrome, including Home Depot, Ticketmaster, and Sephora. Sam's Club still showed the press-and-hold page. Cloakroom loaded the storefront. That is why the product is the browser and the profile, not only a change of egress.
 
@@ -127,7 +127,7 @@ The CLI is the contract. Every command takes `--json`:
 
 **Optional:** save your Amazon login so you never type it again: `cloakroom creds set`. The password goes into your macOS Keychain, never into a file or the repo. `cloakroom creds forget` removes it.
 
-**Newest CloakBrowser build:** get a free key at [cloakbrowser.dev/free](https://cloakbrowser.dev/free) and put it in `.env` as `CLOAKBROWSER_LICENSE_KEY` (see [Settings](#settings)).
+**Newest CloakBrowser build:** get a free key at [cloakbrowser.dev/free](https://cloakbrowser.dev/free) and put it in `.env` as `CLOAKBROWSER_LICENSE_KEY` (see `.env.example`).
 
 ---
 
@@ -147,21 +147,6 @@ cloakroom unshare
 That link is a secret capability URL: anyone who has it can control the logged-in browser. Stop it with `cloakroom unshare` (or `cloakroom share stop`) when you are done. Each new share gets a new link; the old one dies.
 
 This is the remote path. Do not use Tailscale, Cloudflare Funnel, or a port forward. Ports 6080 and 9222 stay on `127.0.0.1`. The tunnel never carries port 9222 (the DevTools port). Amazon codes are still submitted to the localhost `submit_url` from `waiting_for_otp`, not to the share link.
-
----
-
-## Settings
-
-`cloakroom start` creates a `.env` file the first time. Edit it with TextEdit, then run `cloakroom stop` and `cloakroom start`.
-
-| Setting | What it does |
-| --- | --- |
-| `CLOAKBROWSER_LICENSE_KEY` | Uses the newest CloakBrowser build. Free key via GitHub sign-in: [cloakbrowser.dev/free](https://cloakbrowser.dev/free). Leave blank to use the free build in the image. |
-| `CLOAKROOM_PROXY` | Sends browser traffic through a proxy, e.g. `http://user:pass@host:8080` or `socks5://host:1080`. |
-| `CLOAKROOM_FINGERPRINT_SEED` | Any number, e.g. `48213`. Keeps the same browser fingerprint across restarts, which is recommended once you're logged in to sites. |
-| `CLOAKROOM_CDP_PORT` / `CLOAKROOM_VIEWER_PORT` | Change these only if 9222 or 6080 is already in use. Export the same variables when running `cloakroom` so the CLI finds them. |
-
-`.env` is git-ignored and stays on your computer.
 
 ---
 
