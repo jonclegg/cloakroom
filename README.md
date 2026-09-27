@@ -27,6 +27,16 @@ Cloakroom brings the browser home. It runs [CloakBrowser](https://github.com/Clo
 
 **Proof:** on September 26, 2026, a cloud browser was blocked on twelve big homepages (Home Depot, Ticketmaster, Sam's Club, and others). Cloakroom loaded all twelve.
 
+## Text-message codes (2FA)
+
+When a site texts you a sign-in code, **your agent handles the code, not Cloakroom.** Cloakroom doesn't read your texts or iMessage, and it doesn't catch codes automatically. It gives you the browser where the code goes.
+
+1. Your agent (Grok Bot, Muse, Cursor, and so on) gets the code. It might read it from Messages on your Mac or from your email.
+2. The agent types the code into the sign-in page in Cloakroom.
+3. If the agent can't get the code, you type it yourself in the viewer on your Mac, or on your phone using a `cloakroom share` link. Don't paste codes into the chat.
+
+Because the profile keeps its cookies, most sites ask for a code only on the first sign-in, and later sessions usually skip it. Agents will find the details in [the agent guide](skills/cloakroom/SKILL.md).
+
 ## Good to know
 
 - No guarantees. Some sites will still block you, and Cloakroom doesn't solve CAPTCHAs.
