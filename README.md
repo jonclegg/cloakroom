@@ -1,10 +1,15 @@
 # Cloakroom
 
-**A stealth browser on your Mac that your AI agent can drive, for the sites that block cloud browsers.**
+**A stealth browser on your Mac for AI agents: better automation, sessions that persist, and fewer bot walls.**
 
-AI agents like Grok Bot and Muse usually browse from a cloud server. Many big sites (retailers, ticketing, travel, job boards) see a datacenter IP and an automated browser, and answer with a 403, a "press and hold" puzzle, or a Cloudflare wall. The agent is stuck before it can read a page, sign in, or do anything useful.
+AI agents like Grok Bot and Muse usually browse from a cloud server. Many big sites (retailers, ticketing, travel, job boards) see a datacenter IP and an automated browser, and answer with a 403, a "press and hold" puzzle, or a Cloudflare wall. Even when a page loads, the agent's cookies vanish with the session, so it has to sign in again every time.
 
-Cloakroom gives your agent a browser that runs on your own Mac instead. It is [CloakBrowser](https://github.com/CloakHQ/CloakBrowser), a stealth build of Chromium, running in OrbStack with a profile that stays logged in. Your agent starts it and checks on it with the `cloakroom` command, and drives pages over the standard Chrome DevTools Protocol. You can watch it work, or take over, from your Mac or your phone.
+Cloakroom gives your agent a browser that runs on your own Mac instead:
+
+- **Harder to detect.** It's [CloakBrowser](https://github.com/CloakHQ/CloakBrowser), a stealth build of Chromium, running headed on your Mac's connection instead of a datacenter's.
+- **Sessions that persist.** One saved profile keeps cookies and logins across runs and restarts. Sign in once, and every later run is already signed in.
+- **Standard automation.** Your agent drives it over the Chrome DevTools Protocol (CDP) with Playwright, Puppeteer, or any tool that can attach to an existing Chrome.
+- **You can watch and help.** A live viewer shows the real browser, on your Mac or your phone, so you can type a password or solve a puzzle when the agent can't.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/jonclegg/cloakroom/main/install.sh | sh # // pragma: allowlist secret
@@ -14,40 +19,28 @@ Then open this folder in your agent and ask it to use Cloakroom for the site tha
 
 ---
 
-## What you get
-
-- **A stealth browser your agent can call.** Headed CloakBrowser on your Mac. `cloakroom start` and `cloakroom status --json` manage it; Playwright or Puppeteer drive it at `http://127.0.0.1:9222`.
-- **Logins that stick, on any site.** The browser profile lives on your Mac. Sign in once (your agent, or you in the viewer) and the session is still there next time.
-- **You stay in the loop.** A live viewer at http://127.0.0.1:6080 shows the real browser. Click and type in it to enter a password, solve a puzzle, or just watch.
-- **The same window on your phone.** `cloakroom share` prints a private HTTPS link to the viewer, so you can help from anywhere.
-- **Two-factor codes stay with your agent.** Cloakroom never reads your Messages or email. When a site asks for a code, your agent fetches it and enters it.
-- **A worked example to copy.** `cloakroom amazon-login` is a complete sign-in flow, including handing a text-message code from the agent to the browser.
-
----
-
 ## Why a browser on your Mac
 
 A cloud browser gives itself away three ways: automation fingerprints, a datacenter IP, and often a headless window. Cloakroom changes all three. CloakBrowser is built to hide the automation fingerprints, the browser runs headed (with a real window you can see in the viewer), and its traffic leaves from your Mac's internet connection, or from a proxy you choose.
 
 **Proof point.** On September 26, 2026 we opened twelve homepages from a cloud agent on a datacenter IP, and again from Cloakroom on a Mac. The cloud browser was blocked or challenged on all twelve. Cloakroom loaded all twelve: Home Depot, Ticketmaster, Sam's Club, Sephora, Tripadvisor, Etsy, Newegg, American Airlines, Fanatics, Indeed, Glassdoor, and Vinted. Those were homepages, not logins or checkouts, and results change over time.
 
-**"Can't I just route my agent through my Mac?"** Often, yes. Grok Bot's **Route traffic through this computer** setting sends its cloud browser's traffic out through your Mac, and that alone cleared many of the same IP blocks. Cloakroom is for when that isn't enough: when the site also checks the browser itself (Sam's Club still showed its press-and-hold page to the routed browser, and loaded in Cloakroom), or when you want a login that lives on your machine and a browser you can watch and take over.
+**"Can't I just route my agent through my Mac?"** Often, yes. Grok Bot's **Route traffic through this computer** setting sends its cloud browser's traffic out through your Mac, and that alone cleared many of the same IP blocks. Cloakroom is for when that isn't enough: when the site also checks the browser itself (Sam's Club still showed its press-and-hold page to the routed browser, and loaded in Cloakroom), or when you want cookies and logins that live on your machine and a browser you can watch and take over.
 
 ---
 
 ## How it works
 
 ```text
-Your agent ──► cloakroom CLI ─────────► start / stop / status / share
+Your agent ──► cloakroom ───────────────► start / stop / status / share
      │
-     └───────► DevTools (CDP) ─────────► CloakBrowser, headed, in OrbStack on your Mac
-                http://127.0.0.1:9222     ├─ saved profile: stays logged in
-                                          └─ viewer: http://127.0.0.1:6080
-                                                └─ cloakroom share ──► private HTTPS link (your phone)
+     └───────► CDP  http://127.0.0.1:9222 ─► CloakBrowser, headed, in OrbStack on your Mac
+                                              ├─ saved profile: cookies and logins persist
+                                              └─ viewer: http://127.0.0.1:6080
+                                                   └─ cloakroom share ──► private HTTPS link (your phone)
 ```
 
-- The browser runs in the background, as long as OrbStack is running, until you run `cloakroom stop`. Stopping keeps your logins.
-- Every `cloakroom` command takes `--json`, so agents can read the results.
+- The browser runs in the background, as long as OrbStack is running, until you run `cloakroom stop`. Stopping keeps the profile.
 - Nothing is reachable beyond your Mac except the viewer link you create with `cloakroom share`.
 
 ---
@@ -71,20 +64,11 @@ From a checkout of this repo, `./cloakroom` is the same command.
 
 ---
 
-## Drive it from your agent
+## Use it from your agent
 
-**Point your agent at it.** Grok Bot, Muse, Cursor, Claude Code, Codex, or anything that reads repo instructions: open this folder in the agent. [`AGENTS.md`](AGENTS.md) points it to the [Cloakroom skill](skills/cloakroom/SKILL.md), which has the commands, JSON events, and rules. Skill-aware agents can also copy or symlink `skills/cloakroom` into their skills folder (for example `~/.cursor/skills/cloakroom`).
+**Point your agent at it.** Grok Bot, Muse, Cursor, Claude Code, Codex, or anything that reads repo instructions: open this folder in the agent. [`AGENTS.md`](AGENTS.md) points it to the [Cloakroom skill](skills/cloakroom/SKILL.md). Skill-aware agents can also copy or symlink `skills/cloakroom` into their skills folder (for example `~/.cursor/skills/cloakroom`).
 
-**Manage the browser with the CLI:**
-
-| Command | What it does |
-| --- | --- |
-| `cloakroom start` / `stop` | Start or stop the browser. Your logins are kept. |
-| `cloakroom status --json` | Is OrbStack up, is the browser ready, and the viewer, DevTools, and share URLs. |
-| `cloakroom share --json` | Start a private HTTPS link to the viewer and print it. |
-| `cloakroom unshare` | Stop that link. It stops working immediately. |
-
-**Drive pages over DevTools.** Any Playwright or Puppeteer script can connect. `contexts[0]` is the saved, logged-in profile:
+**Drive pages over CDP.** `contexts[0]` is the saved profile, with all its cookies:
 
 ```python
 from playwright.sync_api import sync_playwright
@@ -96,49 +80,20 @@ with sync_playwright() as pw:
     print(page.title())
 ```
 
-`browser.close()` on a DevTools connection only disconnects the script; the browser keeps running. [`examples/hello.py`](examples/hello.py) is the smallest example.
+`browser.close()` on a CDP connection only disconnects the script; the browser and its cookies stay. [`examples/hello.py`](examples/hello.py) is the smallest example.
 
-A simple pattern for a site that needs a login: sign in once yourself in the viewer, then let your agent reuse that session.
+**Manage the browser with `cloakroom`.** Every command takes `--json`:
 
----
+| Command | What it does |
+| --- | --- |
+| `cloakroom start` / `stop` | Start or stop the browser. The profile is kept. |
+| `cloakroom status --json` | Is OrbStack up, is the browser ready, and the viewer, CDP, and share URLs. |
+| `cloakroom share --json` | Start a private HTTPS link to the viewer and print it. |
+| `cloakroom unshare` | Stop that link. It stops working immediately. |
 
-## Two-factor codes
+**Signing in.** The simplest pattern: sign in once yourself in the viewer, then let your agent reuse the session. Or let the agent sign in, and step into the viewer when it hits something it can't do.
 
-**Your agent owns the code. Cloakroom never reads Messages, email, or your authenticator app.** It doesn't touch `~/Library/Messages/chat.db` and doesn't need Full Disk Access.
-
-When a site asks for a code, your agent (which may already be able to read your Messages) gets it and puts it in the page, either by typing it through its own DevTools script or by passing it to Cloakroom's built-in login flow. You can always type the code in the viewer yourself.
-
-Cloakroom's built-in login flow (today, the [Amazon example](#example-a-complete-login-flow-amazon)) takes the code on a local address. When the page asks for a code, the flow prints:
-
-```json
-{"event": "waiting_for_otp", "submit_url": "http://127.0.0.1:<port>/otp", "detail": "..."}
-```
-
-and the agent posts the code while the flow keeps running:
-
-```bash
-curl -fsS -X POST "$submit_url" \
-  -H 'content-type: application/json' \
-  -d '{"code":"123456"}'
-```
-
-A body with only the digits works too. The address is only reachable from your Mac, and Cloakroom never prints the code.
-
----
-
-## Example: a complete login flow (Amazon)
-
-`cloakroom amazon-login` is the built-in example of a full agent-driven sign-in. It's the flow to copy if you want the same shape for another site.
-
-1. The agent runs `cloakroom amazon-login --json`. Cloakroom opens Amazon sign-in in the saved profile. If you're already signed in, it reports `success` right away.
-2. It fills your email and password from the macOS Keychain, or waits while you type them in the viewer.
-3. Amazon texts a code, and Cloakroom prints `waiting_for_otp`.
-4. The agent reads the code from Messages and posts it to `submit_url`. Cloakroom types it in and ticks "don't ask again on this device".
-5. Exit code `0` means signed in. The session is saved for next time.
-
-The agent can also pass a code up front with `--otp "$CODE"`, `CLOAKROOM_OTP="$CODE"`, or a single line on stdin. To save the Amazon login this flow uses, run `cloakroom creds set` in your own terminal (the password goes into the macOS Keychain); `cloakroom creds forget` removes it.
-
-Progress events: `browser_connected`, `waiting_for_user`, `email_filled`, `password_filled`, `sending_code`, `waiting_for_otp`, `otp_filled`, `otp_timeout`, `success`, `timeout`.
+**Two-factor codes.** Cloakroom never reads your Messages, email, or authenticator app. If a site asks for a code, your agent gets it (some agents can read your Messages) and types it into the page, or you type it in the viewer.
 
 ---
 
@@ -154,7 +109,7 @@ cloakroom share
 
 It starts the browser if needed, opens a Cloudflare quick tunnel to **the viewer only**, and prints an `https://….trycloudflare.com` link. There's no confirmation step, so an agent can send you the link straight away. Open it in Safari or Chrome on your phone.
 
-**Treat that link like a key.** Anyone who has it can control your logged-in browser. It lasts until you run `cloakroom unshare`, and every new share gets a new link. The tunnel never carries the DevTools port (9222), and two-factor codes still go to the local `submit_url`, not the share link.
+**Treat that link like a key.** Anyone who has it can control your logged-in browser. It lasts until you run `cloakroom unshare`, and every new share gets a new link. The tunnel never carries the CDP port (9222).
 
 ---
 
@@ -165,7 +120,7 @@ It starts the browser if needed, opens a Cloudflare quick tunnel to **the viewer
 | Setting | What it does |
 | --- | --- |
 | `CLOAKROOM_PROXY` | Send browser traffic through a proxy, e.g. `http://user:pass@host:8080` or `socks5://host:1080`. |
-| `CLOAKROOM_FINGERPRINT_SEED` | Any number, e.g. `48213`. Keeps the same browser fingerprint across restarts. Recommended once you're logged in to sites. |
+| `CLOAKROOM_FINGERPRINT_SEED` | Any number, e.g. `48213`. Keeps the same browser fingerprint across restarts. Recommended once you're signed in to sites, so they keep seeing the same browser. |
 | `CLOAKBROWSER_LICENSE_KEY` | Use the newest CloakBrowser build. Free key with GitHub sign-in at [cloakbrowser.dev/free](https://cloakbrowser.dev/free). Leave blank to use the build in the image. |
 | `CLOAKROOM_CDP_PORT` / `CLOAKROOM_VIEWER_PORT` | Change only if 9222 or 6080 is already in use. Export the same variables when running `cloakroom`. |
 
@@ -179,16 +134,16 @@ It starts the browser if needed, opens a Cloudflare quick tunnel to **the viewer
 - **A homepage isn't a login.** Loading a storefront is not the same as signing in, checking out, or buying tickets on sale.
 - **Your IP still matters.** Stealth is not magic. Traffic leaves from your Mac's connection, or from `CLOAKROOM_PROXY`. A flagged IP, VPN, or datacenter proxy can still get you challenged. A good residential connection or proxy helps.
 - **It doesn't solve CAPTCHAs.** If a site shows a puzzle, you finish it in the viewer.
-- **It's a browser, not a site-by-site bot.** Your agent decides what to do on each page. Amazon is the only sign-in flow Cloakroom ships ready-made.
+- **It's a browser, not a bot.** Your agent decides what to do on each page. Cloakroom has no site-specific scripts.
 - **Your accounts, their rules.** Use Cloakroom only with your own accounts, and follow each site's terms.
 
 ---
 
 ## Security and privacy
 
-- **Ports 9222 and 6080 stay on `127.0.0.1`.** Port 9222 gives full control of a browser that's logged in to your accounts, and the viewer has no password. Don't publish either port, and don't expose them with Tailscale, Funnel, or a port forward. The only remote path is `cloakroom share`, which tunnels the viewer only.
-- **Passwords** are typed by you in the viewer, or, for the Amazon example flow, kept in the macOS Keychain with `cloakroom creds set`. They are never kept in the repo, `.env`, or chat.
-- **Two-factor codes** are fetched by your agent, received by Cloakroom only on `127.0.0.1`, typed into the browser, and never logged.
+- **Ports 9222 and 6080 stay on `127.0.0.1`.** Port 9222 gives full control of a browser that's signed in to your accounts, and the viewer has no password. Don't publish either port, and don't expose them with Tailscale, Funnel, or a port forward. The only remote path is `cloakroom share`, which tunnels the viewer only.
+- **The profile** (cookies, logins) lives in a volume on your Mac. `docker compose down -v` deletes it.
+- **Passwords and codes** are typed by your agent or by you, into the browser. Cloakroom doesn't store them.
 - **`.env`** (license key, proxy password) is git-ignored.
 
 ---
@@ -204,12 +159,6 @@ It starts the browser if needed, opens a Cloudflare quick tunnel to **the viewer
 **"port is already allocated".** Something else uses 9222 or 6080, often a Chrome started with remote debugging. Close it, or change the ports in `.env`.
 
 **"cloudflared is not installed".** Run `brew install cloudflared`, or download it from [Cloudflare's downloads](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/downloads/) and put it on your PATH. Then run `cloakroom share` again.
-
-**`waiting_for_otp` and no code shows up.** The agent should fetch the code and post it to `submit_url`. If it can't, type the code in the viewer. The flow keeps running.
-
-**`otp_timeout`.** No code arrived in time. Post it to the same `submit_url`, or type it in the viewer.
-
-**`waiting_for_user` with "a page Cloakroom doesn't recognize".** The site showed a puzzle or an extra "is this you?" step. Finish it in the viewer and the flow picks up where it left off.
 
 **Tabs crash ("Aw, Snap!") or it's slow.** Quit other heavy apps and run `cloakroom start` again. OrbStack's memory settings are in the OrbStack app.
 
@@ -238,12 +187,12 @@ For the phone viewer, install `cloudflared` (`winget install --id Cloudflare.clo
 ### What's running
 
 - **`cloakroom` container:** the official `cloakhq/cloakbrowser` image plus x11vnc and noVNC ([`image/Dockerfile`](image/Dockerfile)). It runs [`cloakserve`](https://github.com/CloakHQ/CloakBrowser#cdp-server-mode) headed on a virtual display, which passes more bot checks and is what the viewer shows. It has `shm_size: 2gb` (Chromium crashes with the 64 MB default) and a healthcheck on `/json/version`.
-- **Volumes:** `profile` holds the browser profile that keeps you logged in. `binary-cache` keeps a licensed binary so it downloads once. [`image/cloakroom-serve.sh`](image/cloakroom-serve.sh) keeps `cloakserve` from deleting the profile on exit.
-- **`cloakroom` CLI** ([`cli/`](cli/)): Python with the Playwright client in `cli/.venv`, created on first run. It drives the container's browser over DevTools, so it needs no browser download of its own.
+- **Volumes:** `profile` holds the browser profile (cookies and logins). `binary-cache` keeps a licensed binary so it downloads once. [`image/cloakroom-serve.sh`](image/cloakroom-serve.sh) keeps `cloakserve` from deleting the profile on exit.
+- **`cloakroom` command** ([`cli/`](cli/)): a small Python tool with no dependencies. `start`/`stop` run [`start.sh`](start.sh)/[`stop.sh`](stop.sh), which also work on their own; `share` runs `cloudflared`.
 
 ### Extra identities
 
-Add `?fingerprint=<seed>` to the DevTools URL for a separate identity, e.g. `http://127.0.0.1:9222?fingerprint=11111&timezone=Europe/Berlin`. Only the default identity is saved to the `profile` volume. See the [upstream docs](https://github.com/CloakHQ/CloakBrowser#cdp-server-mode) for all parameters.
+Add `?fingerprint=<seed>` to the CDP URL for a separate identity, e.g. `http://127.0.0.1:9222?fingerprint=11111&timezone=Europe/Berlin`. Only the default identity is saved to the `profile` volume. See the [upstream docs](https://github.com/CloakHQ/CloakBrowser#cdp-server-mode) for all parameters.
 
 ### Stealth test, updates, plain Compose
 
@@ -260,4 +209,4 @@ Add `?fingerprint=<seed>` to the DevTools URL for a separate identity, e.g. `htt
 - Docker image: <https://hub.docker.com/r/cloakhq/cloakbrowser>
 - OrbStack: <https://orbstack.dev/>
 
-Cloakroom's own code is [MIT licensed](LICENSE). The CloakBrowser binary inside the official image belongs to CloakHQ and has its own [Binary License](https://github.com/CloakHQ/CloakBrowser/blob/main/BINARY-LICENSE.md). See [NOTICE](NOTICE). Cloakroom is an independent community project, not affiliated with Amazon, CloakHQ, or any site mentioned here.
+Cloakroom's own code is [MIT licensed](LICENSE). The CloakBrowser binary inside the official image belongs to CloakHQ and has its own [Binary License](https://github.com/CloakHQ/CloakBrowser/blob/main/BINARY-LICENSE.md). See [NOTICE](NOTICE). Cloakroom is an independent community project, not affiliated with CloakHQ or any site mentioned here.
