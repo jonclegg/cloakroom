@@ -5,10 +5,10 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY index.html /usr/share/novnc/index.html
-# Keep HTML/JS in sync (Debian novnc 1.6 dropped the clear button; Safari often
-# caches an older ui.js that still expects noVNC_clipboard_clear_button).
-COPY novnc-patch/vnc.html /usr/share/novnc/vnc.html
-COPY novnc-patch/ui.js /usr/share/novnc/app/ui.js
+# Safari can keep a cached noVNC <=1.3 ui.js, which crashes on load if this
+# element is missing (upstream removed it in 1.4). Hidden, so newer ui.js ignores it.
+RUN sed -i 's#<textarea id="noVNC_clipboard_text" rows=5></textarea>#&\n                <input id="noVNC_clipboard_clear_button" type="button" hidden>#' /usr/share/novnc/vnc.html \
+    && grep -q 'id="noVNC_clipboard_clear_button"' /usr/share/novnc/vnc.html
 COPY cloakserve-headed.py /usr/local/bin/cloakserve-headed.py
 COPY cloakroom-serve.sh /usr/local/bin/cloakroom-serve
 RUN chmod +x /usr/local/bin/cloakroom-serve
