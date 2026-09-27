@@ -2,48 +2,37 @@
 
 **A stealth browser on your Mac for AI agents: fewer bot walls, and logins that stick.**
 
-Agents like Grok Bot and Muse browse from cloud servers, so many big sites see a datacenter IP and an automated browser and block them. Their cookies also vanish after every session.
-
-Cloakroom runs [CloakBrowser](https://github.com/CloakHQ/CloakBrowser) (stealth Chromium) on your own Mac, with one saved profile. Your agent drives it; you can watch it and step in from your Mac or your phone.
-
-**Proof point:** on September 26, 2026, a cloud browser was blocked on twelve big homepages (Home Depot, Ticketmaster, Sam's Club, and others). Cloakroom loaded all twelve.
-
 ## Quickstart
 
-1. **Install** (Mac):
+Tell your agent (Grok Bot, Muse, Cursor, Claude Code, Codex) to install Cloakroom:
 
-   ```bash
-   curl -fsSL https://raw.githubusercontent.com/jonclegg/cloakroom/main/install.sh | sh # // pragma: allowlist secret
-   ```
+```bash
+curl -fsSL https://raw.githubusercontent.com/jonclegg/cloakroom/main/install.sh | sh # // pragma: allowlist secret
+```
 
-   This installs OrbStack and Cloakroom, then starts the browser. The first start downloads about 1 GB.
+Or just hand it this repo's URL. That's the whole setup. Your agent reads the instructions here and handles the rest. Mac only.
 
-2. **Start the browser** any time later:
+## Why
 
-   ```bash
-   cloakroom start
-   ```
+Cloud agents browse from datacenter servers. Big sites see a datacenter IP and an automated browser, and they put up a bot wall. Every session also starts fresh, so the login from yesterday is gone today.
 
-3. **Watch the browser** at <http://127.0.0.1:6080>. You can click and type in it, for example to sign in once or finish a puzzle.
+Cloakroom brings the browser home. It runs [CloakBrowser](https://github.com/CloakHQ/CloakBrowser), a stealth build of Chromium, on your own Mac with one saved profile. Your agent drives it from wherever it runs.
 
-4. **Point your agent at it.** Open this folder in Grok Bot, Muse, Cursor, Claude Code, or Codex, and ask it to use Cloakroom for the site that keeps blocking it.
+## What you get
 
-5. **Watch from your phone:**
+- **Harder to detect.** A stealth browser on your own connection, not an automated browser in a datacenter.
+- **Sessions that persist.** Sign in once. Cookies and logins stay in the profile across runs and restarts.
+- **You can watch and help.** Open the live viewer on your Mac, or have your agent run `cloakroom share` to get a private link for your phone. Click, type, or sign in when the agent gets stuck.
+- **Standard CDP.** Playwright, Puppeteer, or anything else that speaks the Chrome DevTools Protocol connects to `127.0.0.1:9222`. No SDK.
 
-   ```bash
-   cloakroom share
-   ```
-
-   This prints a private link. Anyone with that link can control your logged-in browser, so keep it to yourself. Run `cloakroom unshare` when you're done.
-
-`cloakroom stop` stops the browser. Your logins are kept.
+**Proof:** on September 26, 2026, a cloud browser was blocked on twelve big homepages (Home Depot, Ticketmaster, Sam's Club, and others). Cloakroom loaded all twelve.
 
 ## Good to know
 
-- No site is guaranteed to work, and Cloakroom doesn't solve CAPTCHAs for you.
-- Your IP still matters. Traffic leaves from your Mac's connection, or from a proxy you set in `.env` (see `.env.example`).
-- Only your Mac can reach the browser. `cloakroom share` is the one way to reach it from elsewhere, and it only exposes the viewer.
-- Windows, troubleshooting, and the technical details are in [the agent guide](skills/cloakroom/SKILL.md).
+- No guarantees. Some sites will still block you, and Cloakroom doesn't solve CAPTCHAs.
+- Your IP still matters. Traffic leaves from your Mac's connection, or from a proxy you set.
+- Only your Mac can reach the browser. `cloakroom share` is the one way in from elsewhere, and it exposes only the viewer. Anyone with that link can control your logged-in browser, so keep it private and run `cloakroom unshare` when you're done.
+- The full reference for agents (and the curious) is in [AGENTS.md](AGENTS.md) and [the agent guide](skills/cloakroom/SKILL.md).
 
 ## License
 
