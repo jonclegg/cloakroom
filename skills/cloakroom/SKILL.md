@@ -28,6 +28,8 @@ It controls a stealth Chromium in OrbStack (`cloakhq/cloakbrowser`). The browser
    page = browser.contexts[0].new_page()
    ```
 
+   If Playwright isn't installed, `pip install playwright` is enough. Skip `playwright install`: you attach to the running browser, so no browser download is needed.
+
    `browser.contexts[0]` is the persistent profile: cookies and logins from earlier runs are already there. Don't create a new context unless you want a clean session. `browser.close()` only disconnects you; the browser keeps running.
 
 3. **Bring in the user when needed**
