@@ -1,6 +1,4 @@
 #!/bin/bash
-# Agent-facing entry point. First run creates cli/.venv with the Playwright client
-# (no browser download: the browser is the one running in OrbStack).
 set -euo pipefail
 source="${BASH_SOURCE[0]}"
 while [ -L "$source" ]; do
@@ -12,19 +10,11 @@ while [ -L "$source" ]; do
   esac
 done
 root="$(cd "$(dirname "$source")" && pwd)"
-venv="$root/cli/.venv"
 
-if [ ! -f "$venv/.installed" ]; then
-  if ! command -v python3 >/dev/null 2>&1; then
-    echo "Cloakroom needs python3. On a Mac run: xcode-select --install" >&2
-    exit 1
-  fi
-  echo "[cloakroom] First run: installing the Cloakroom CLI (one time)..." >&2
-  rm -rf "$venv"
-  python3 -m venv "$venv"
-  "$venv/bin/pip" install --quiet --disable-pip-version-check -r "$root/cli/requirements.txt" >&2
-  touch "$venv/.installed"
+if ! command -v python3 >/dev/null 2>&1; then
+  echo "Cloakroom needs python3. On a Mac run: xcode-select --install" >&2
+  exit 1
 fi
 
 export PYTHONPATH="$root/cli"
-exec "$venv/bin/python" -m cloakroom_cli "$@"
+exec python3 -m cloakroom_cli "$@"

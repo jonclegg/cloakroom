@@ -1,226 +1,184 @@
 # Cloakroom
 
+**A stealth browser on your Mac for AI agents: better automation, sessions that persist, and fewer bot walls.**
+
+AI agents like Grok Bot and Muse usually browse from a cloud server. Many big sites (retailers, ticketing, travel, job boards) see a datacenter IP and an automated browser, and answer with a 403, a "press and hold" puzzle, or a Cloudflare wall. Even when a page loads, the agent's cookies vanish with the session, so it has to sign in again every time.
+
+Cloakroom gives your agent a browser that runs on your own Mac instead:
+
+- **Harder to detect.** It's [CloakBrowser](https://github.com/CloakHQ/CloakBrowser), a stealth build of Chromium, running headed on your Mac's connection instead of a datacenter's.
+- **Sessions that persist.** One saved profile keeps cookies and logins across runs and restarts. Sign in once, and every later run is already signed in.
+- **Standard automation.** Your agent drives it over the Chrome DevTools Protocol (CDP) with Playwright, Puppeteer, or any tool that can attach to an existing Chrome.
+- **You can watch and help.** A live viewer shows the real browser, on your Mac or your phone, so you can type a password or solve a puzzle when the agent can't.
+
 ```bash
 curl -fsSL https://raw.githubusercontent.com/jonclegg/cloakroom/main/install.sh | sh # // pragma: allowlist secret
 ```
 
-That installs Cloakroom on a Mac and starts it. It uses **OrbStack**, not Docker Desktop. If OrbStack is missing, the installer installs it with Homebrew, or opens [orbstack.dev/download](https://orbstack.dev/download) and waits while you drag the app to Applications. It also installs `cloudflared` (Homebrew `cloudflared`, or the official binary from [Cloudflare's downloads](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/downloads/)) so the viewer can be opened on a phone.
+Then open this folder in your agent and ask it to use Cloakroom for the site that keeps blocking it.
 
-After it finishes, these work from any terminal:
+---
 
-```bash
-cloakroom start
-cloakroom stop
-cloakroom status
-cloakroom amazon-login
-```
+## Why a browser on your Mac
 
-**Let your AI assistant log in to websites for you.** Cloakroom runs a stealth browser ([CloakBrowser](https://github.com/CloakHQ/CloakBrowser)) in OrbStack. When Amazon texts a code, **Grok Bot or Muse** reads it from Messages and hands it to Cloakroom. Cloakroom does not read iMessage.
+A cloud browser gives itself away three ways: automation fingerprints, a datacenter IP, and often a headless window. Cloakroom changes all three. CloakBrowser is built to hide the automation fingerprints, the browser runs headed (with a real window you can see in the viewer), and its traffic leaves from your Mac's internet connection, or from a proxy you choose.
 
-## The demo
+**Proof point.** On September 26, 2026 we opened twelve homepages from a cloud agent on a datacenter IP, and again from Cloakroom on a Mac. The cloud browser was blocked or challenged on all twelve. Cloakroom loaded all twelve: Home Depot, Ticketmaster, Sam's Club, Sephora, Tripadvisor, Etsy, Newegg, American Airlines, Fanatics, Indeed, Glassdoor, and Vinted. Those were homepages, not logins or checkouts, and results change over time.
+
+**"Can't I just route my agent through my Mac?"** Often, yes. Grok Bot's **Route traffic through this computer** setting sends its cloud browser's traffic out through your Mac, and that alone cleared many of the same IP blocks. Cloakroom is for when that isn't enough: when the site also checks the browser itself (Sam's Club still showed its press-and-hold page to the routed browser, and loaded in Cloakroom), or when you want cookies and logins that live on your machine and a browser you can watch and take over.
+
+---
+
+## How it works
 
 ```text
-In Grok Bot: "Login to Amazon with cloakroom"
-→ Cloakroom starts stealth Chromium in OrbStack
-→ Opens Amazon sign-in
-→ You enter credentials once (or the saved login fills them)
-→ Amazon texts a code
-→ Grok Bot or Muse reads the code from Messages and passes it to Cloakroom
-→ Cloakroom types it in
-→ You're logged in; the session persists
+Your agent ──► cloakroom ───────────────► start / stop / status / share
+     │
+     └───────► CDP  http://127.0.0.1:9222 ─► CloakBrowser, headed, in OrbStack on your Mac
+                                              ├─ saved profile: cookies and logins persist
+                                              └─ viewer: http://127.0.0.1:6080
+                                                   └─ cloakroom share ──► private HTTPS link (your phone)
 ```
 
-What the agent actually runs (defined in [`skills/cloakroom/SKILL.md`](skills/cloakroom/SKILL.md)):
+- The browser runs in the background, as long as OrbStack is running, until you run `cloakroom stop`. Stopping keeps the profile.
+- Nothing is reachable beyond your Mac except the viewer link you create with `cloakroom share`.
 
-1. `cloakroom status --json`: is OrbStack up, and is the browser ready?
-2. `cloakroom start` if the browser isn't running. This pulls `cloakhq/cloakbrowser` and opens the live viewer at http://127.0.0.1:6080.
-3. `cloakroom amazon-login --json` opens Amazon sign-in in the persistent browser profile. It fills your email and password from the macOS Keychain, or waits while you type them in the viewer. When Amazon asks for a code, it emits `waiting_for_otp`. The assistant reads Messages, then submits the code. Cloakroom types it in and ticks "don't ask again on this device".
-4. The agent reports `success`. Next time, `amazon-login` sees the saved session and returns immediately.
+---
 
-The agent never sees your password. The code is passed only to Cloakroom on this computer and typed straight into the browser.
+## Install
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/jonclegg/cloakroom/main/install.sh | sh # // pragma: allowlist secret
+```
+
+The installer:
+
+1. Installs **OrbStack** (not Docker Desktop) with Homebrew. Without Homebrew, it opens [orbstack.dev/download](https://orbstack.dev/download) and waits while you drag OrbStack to Applications.
+2. Installs `cloudflared`, used only by `cloakroom share`.
+3. Downloads Cloakroom to `~/.cloakroom/app` and puts the `cloakroom` command on your PATH.
+4. Starts the browser and opens the viewer. The first start downloads about 1 GB.
+
+You need a Mac with Python 3. If `python3` is missing, run `xcode-select --install` once. Apple Silicon runs natively.
 
 From a checkout of this repo, `./cloakroom` is the same command.
 
 ---
 
-## Why Cloakroom
+## Use it from your agent
 
-A cloud VM browser often looks like a bot. It shows automation fingerprints, a datacenter IP, and often a headless window. Shopping and ticket sites treat that as automation, and sign-in can stop early.
+**Point your agent at it.** Grok Bot, Muse, Cursor, Claude Code, Codex, or anything that reads repo instructions: open this folder in the agent. [`AGENTS.md`](AGENTS.md) points it to the [Cloakroom skill](skills/cloakroom/SKILL.md). Skill-aware agents can also copy or symlink `skills/cloakroom` into their skills folder (for example `~/.cursor/skills/cloakroom`).
 
-Cloakroom runs headed [CloakBrowser](https://github.com/CloakHQ/CloakBrowser) (stealth Chromium) in OrbStack on your Mac. Chromium is headed on the virtual display the viewer shows. The profile stays on your machine, so the login session persists. Grok Bot and Muse use this browser to sign in with your own account. Amazon sign-in is the flow Cloakroom ships. An optional proxy is [`CLOAKROOM_PROXY`](#settings). The product is the browser and the profile on your Mac, not a way to borrow your home IP.
+**Drive pages over CDP.** `contexts[0]` is the saved profile, with all its cookies:
 
-Grok Bot has a separate setting, **Route traffic through this computer**. When that toggle is on, the cloud browser's traffic leaves through your Mac. The browser is still stock headed Chrome. Only the egress IP changes. In an earlier homepage pass the same day, that toggle cleared many datacenter blocks on stock Chrome, including Home Depot, Ticketmaster, and Sephora. Sam's Club still showed the press-and-hold page. Cloakroom loaded the storefront. That is why the product is the browser and the profile, not only a change of egress.
+```python
+from playwright.sync_api import sync_playwright
 
-CloakBrowser's docs name Cloudflare Turnstile, HUMAN / PerimeterX, Akamai, DataDome, and Kasada as checks it targets. See [CloakHQ/CloakBrowser](https://github.com/CloakHQ/CloakBrowser).
-
-Homepage smoke on 2026-09-26, homepages only. Cloud Grok Bot had the toggle off: headed Chrome, direct datacenter egress (about `169.150.196.10`). These twelve homepages challenged or blocked that browser. Headed CloakBrowser on the Mac loaded them.
-
-| Site | Cloud Grok Bot | Cloakroom |
-| --- | --- | --- |
-| **Home Depot** ([homedepot.com](https://www.homedepot.com)) | 403 Access Denied | Pass |
-| **Ticketmaster** ([ticketmaster.com](https://www.ticketmaster.com)) | 403 | Pass |
-| **Sam's Club** ([samsclub.com](https://www.samsclub.com)) | HUMAN / PerimeterX press-and-hold | Pass. The storefront loaded. |
-| **Sephora** ([sephora.com](https://www.sephora.com)) | 403 Access Denied | Pass |
-| **Tripadvisor** ([tripadvisor.com](https://www.tripadvisor.com)) | 403 | Pass |
-| **Etsy** ([etsy.com](https://www.etsy.com)) | 403 | Pass |
-| **Newegg** ([newegg.com](https://www.newegg.com)) | Cloudflare "Just a moment…" | Pass |
-| **American Airlines** ([aa.com](https://www.aa.com)) | Access Denied | Pass |
-| **Fanatics** ([fanatics.com](https://www.fanatics.com)) | 403 Access Denied | Pass |
-| **Indeed** ([indeed.com](https://www.indeed.com)) | Cloudflare challenge | Pass |
-| **Glassdoor** ([glassdoor.com](https://www.glassdoor.com)) | Cloudflare challenge | Pass |
-| **Vinted** ([vinted.com](https://www.vinted.com)) | Cloudflare challenge | Pass |
-
-Amazon, Walmart, and some other shopping homepages passed on both the same day. CVS also returned 403 on the cloud browser. It is not one of the twelve above.
-
-A homepage is not a login, a checkout, or an on-sale page. IP reputation matters as much as the fingerprint. Results change. Cloakroom doesn't guarantee any site's bot checks will pass. Use it only with your own accounts, and follow each site's terms.
-
----
-
-## How the code gets in
-
-Cloakroom does not read Messages, `~/Library/Messages/chat.db`, or Full Disk Access. That is the assistant's job.
-
-When the sign-in page asks for a code, `amazon-login` prints:
-
-```json
-{"event": "waiting_for_otp", "submit_url": "http://127.0.0.1:<port>/otp", "detail": "..."}
+with sync_playwright() as pw:
+    browser = pw.chromium.connect_over_cdp("http://127.0.0.1:9222")
+    page = browser.contexts[0].new_page()
+    page.goto("https://www.homedepot.com")
+    print(page.title())
 ```
 
-Grok Bot or Muse reads the new Amazon code from Messages and submits it while `amazon-login` is still running:
+`browser.close()` on a CDP connection only disconnects the script; the browser and its cookies stay. [`examples/hello.py`](examples/hello.py) is the smallest example.
 
-```bash
-curl -fsS -X POST "$submit_url" \
-  -H 'content-type: application/json' \
-  -d '{"code":"123456"}'
-```
-
-A body that is only the digits works too. The port is chosen when the login starts and is only reachable on this computer.
-
-If the assistant already has the code, it can pass it at the start instead:
-
-```bash
-cloakroom amazon-login --otp "$CODE" --json
-CLOAKROOM_OTP="$CODE" cloakroom amazon-login --json
-```
-
-A single line on that command's stdin is also accepted. You can always type the code in the viewer yourself.
-
-The code is not printed in `amazon-login` output.
-
----
-
-## Use it with an agent
-
-- **Grok Bot, Muse, Cursor, Claude Code, Codex, or anything that reads repo instructions:** open this folder in the agent. [`AGENTS.md`](AGENTS.md) points it to the [Cloakroom skill](skills/cloakroom/SKILL.md), which has the exact commands, the JSON events, and the rules (the assistant fetches the iMessage code; never ask for the password in chat).
-- **Skill-aware agents:** copy or symlink `skills/cloakroom` into the agent's skills folder (for example `~/.cursor/skills/cloakroom`).
-
-The CLI is the contract. Every command takes `--json`:
+**Manage the browser with `cloakroom`.** Every command takes `--json`:
 
 | Command | What it does |
 | --- | --- |
-| `cloakroom start` / `stop` | Start or stop the browser. Your logins are kept. |
-| `cloakroom status --json` | `docker_running`, `ready`, `browser`, `viewer_url`, `cdp_url`, `share_url`, `amazon_credentials` |
-| `cloakroom share` / `share --json` | One command. Starts a temporary HTTPS link to the viewer and prints it. No confirmation. `{"event":"share_ready","url":"https://….trycloudflare.com","viewer_local":"http://127.0.0.1:6080"}`. |
-| `cloakroom unshare` / `share stop` | Stop that link. The URL stops working. |
-| `cloakroom amazon-login --json` | Streams events (`browser_connected`, `waiting_for_user`, `email_filled`, `password_filled`, `sending_code`, `waiting_for_otp`, `otp_filled`, `otp_timeout`, `success`, `timeout`). Exit code `0` means logged in. |
-| `cloakroom creds set` / `forget` / `status` | Manage the Amazon login in the macOS Keychain. |
+| `cloakroom start` / `stop` | Start or stop the browser. The profile is kept. |
+| `cloakroom status --json` | Is OrbStack up, is the browser ready, and the viewer, CDP, and share URLs. |
+| `cloakroom share --json` | Start a private HTTPS link to the viewer and print it. |
+| `cloakroom unshare` | Stop that link. It stops working immediately. |
 
-**Optional:** save your Amazon login so you never type it again: `cloakroom creds set`. The password goes into your macOS Keychain, never into a file or the repo. `cloakroom creds forget` removes it.
+**Signing in.** The simplest pattern: sign in once yourself in the viewer, then let your agent reuse the session. Or let the agent sign in, and step into the viewer when it hits something it can't do.
 
-**Newest CloakBrowser build:** get a free key at [cloakbrowser.dev/free](https://cloakbrowser.dev/free) and put it in `.env` as `CLOAKBROWSER_LICENSE_KEY` (see [Settings](#settings)).
+**Two-factor codes.** Cloakroom never reads your Messages, email, or authenticator app. If a site asks for a code, your agent gets it (some agents can read your Messages) and types it into the page, or you type it in the viewer.
 
 ---
 
-## Watch and take over: the viewer
+## Watch or take over, from your Mac or your phone
 
-http://127.0.0.1:6080 shows the real browser, live. You can click and type in it. Use it to enter credentials the first time, solve a puzzle if Amazon shows one, type a code yourself, or just watch the agent work. `cloakroom start` opens it for you.
+http://127.0.0.1:6080 shows the real browser, live, and you can click and type in it. `cloakroom start` opens it for you.
 
-### On your phone
-
-`cloakroom share` is one command. It starts the browser if it is not already running, opens a Cloudflare quick tunnel to **the viewer only**, and prints an `https://….trycloudflare.com` link. It does not ask you to confirm. Open that link in Safari or Chrome. An agent (Grok Bot or Muse) should run `cloakroom share` and send you the link immediately, with no approval step. The pid and URL are saved in `~/.cloakroom/share.json`. `cloakroom status` shows the link while it is active.
+When you're away from your Mac, run (or have your agent run):
 
 ```bash
 cloakroom share
-cloakroom unshare
 ```
 
-That link is a secret capability URL: anyone who has it can control the logged-in browser. Stop it with `cloakroom unshare` (or `cloakroom share stop`) when you are done. Each new share gets a new link; the old one dies.
+It starts the browser if needed, opens a Cloudflare quick tunnel to **the viewer only**, and prints an `https://….trycloudflare.com` link. There's no confirmation step, so an agent can send you the link straight away. Open it in Safari or Chrome on your phone.
 
-This is the remote path. Do not use Tailscale, Cloudflare Funnel, or a port forward. Ports 6080 and 9222 stay on `127.0.0.1`. The tunnel never carries port 9222 (the DevTools port). Amazon codes are still submitted to the localhost `submit_url` from `waiting_for_otp`, not to the share link.
+**Treat that link like a key.** Anyone who has it can control your logged-in browser. It lasts until you run `cloakroom unshare`, and every new share gets a new link. The tunnel never carries the CDP port (9222).
 
 ---
 
 ## Settings
 
-`cloakroom start` creates a `.env` file the first time. Edit it with TextEdit, then run `cloakroom stop` and `cloakroom start`.
+`cloakroom start` creates a `.env` file the first time. Edit it, then run `cloakroom stop` and `cloakroom start`.
 
 | Setting | What it does |
 | --- | --- |
-| `CLOAKBROWSER_LICENSE_KEY` | Uses the newest CloakBrowser build. Free key via GitHub sign-in: [cloakbrowser.dev/free](https://cloakbrowser.dev/free). Leave blank to use the free build in the image. |
-| `CLOAKROOM_PROXY` | Sends browser traffic through a proxy, e.g. `http://user:pass@host:8080` or `socks5://host:1080`. |
-| `CLOAKROOM_FINGERPRINT_SEED` | Any number, e.g. `48213`. Keeps the same browser fingerprint across restarts, which is recommended once you're logged in to sites. |
-| `CLOAKROOM_CDP_PORT` / `CLOAKROOM_VIEWER_PORT` | Change these only if 9222 or 6080 is already in use. Export the same variables when running `cloakroom` so the CLI finds them. |
+| `CLOAKROOM_PROXY` | Send browser traffic through a proxy, e.g. `http://user:pass@host:8080` or `socks5://host:1080`. |
+| `CLOAKROOM_FINGERPRINT_SEED` | Any number, e.g. `48213`. Keeps the same browser fingerprint across restarts. Recommended once you're signed in to sites, so they keep seeing the same browser. |
+| `CLOAKBROWSER_LICENSE_KEY` | Use the newest CloakBrowser build. Free key with GitHub sign-in at [cloakbrowser.dev/free](https://cloakbrowser.dev/free). Leave blank to use the build in the image. |
+| `CLOAKROOM_CDP_PORT` / `CLOAKROOM_VIEWER_PORT` | Change only if 9222 or 6080 is already in use. Export the same variables when running `cloakroom`. |
 
-`.env` is git-ignored and stays on your computer.
+`.env` is git-ignored and stays on your Mac.
+
+---
+
+## What Cloakroom doesn't promise
+
+- **No site is guaranteed.** Bot checks change constantly. Something that loads today may be challenged tomorrow.
+- **A homepage isn't a login.** Loading a storefront is not the same as signing in, checking out, or buying tickets on sale.
+- **Your IP still matters.** Stealth is not magic. Traffic leaves from your Mac's connection, or from `CLOAKROOM_PROXY`. A flagged IP, VPN, or datacenter proxy can still get you challenged. A good residential connection or proxy helps.
+- **It doesn't solve CAPTCHAs.** If a site shows a puzzle, you finish it in the viewer.
+- **It's a browser, not a bot.** Your agent decides what to do on each page. Cloakroom has no site-specific scripts.
+- **Your accounts, their rules.** Use Cloakroom only with your own accounts, and follow each site's terms.
+
+---
+
+## Security and privacy
+
+- **Ports 9222 and 6080 stay on `127.0.0.1`.** Port 9222 gives full control of a browser that's signed in to your accounts, and the viewer has no password. Don't publish either port, and don't expose them with Tailscale, Funnel, or a port forward. The only remote path is `cloakroom share`, which tunnels the viewer only.
+- **The profile** (cookies, logins) lives in a volume on your Mac. `docker compose down -v` deletes it.
+- **Passwords and codes** are typed by your agent or by you, into the browser. Cloakroom doesn't store them.
+- **`.env`** (license key, proxy password) is git-ignored.
 
 ---
 
 ## Troubleshooting
 
-**`waiting_for_otp` and no code shows up**
-The assistant reads Messages and POSTs the code to `submit_url`. If it can't see the text, type the code in the viewer. The login keeps running.
+**"OrbStack did not become ready".** Open OrbStack from Applications and finish its first-run setup (it may ask for your Mac password), then run `cloakroom start` again.
 
-**`otp_timeout`**
-No code was handed to Cloakroom in time. Submit it to the same `submit_url`, or type it in the viewer.
+**"python3 not found".** Run `xcode-select --install` once.
 
-**`waiting_for_user` with "a page Cloakroom doesn't recognize"**
-Amazon sometimes shows a puzzle or an extra "is this you?" step. Finish it in the viewer, and the command picks up where it left off.
+**"permission denied: ./cloakroom".** Run `chmod +x cloakroom start.sh stop.sh install.sh` once, or use `bash cloakroom …`.
 
-**"OrbStack did not become ready"**
-Open OrbStack from Applications and finish its first-run setup (it may ask for your Mac password). Then run `cloakroom start` again. Download: https://orbstack.dev/download
+**"port is already allocated".** Something else uses 9222 or 6080, often a Chrome started with remote debugging. Close it, or change the ports in `.env`.
 
-**"python3 not found"**
-Run `xcode-select --install` once to get Apple's command-line tools, which include Python.
+**"cloudflared is not installed".** Run `brew install cloudflared`, or download it from [Cloudflare's downloads](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/downloads/) and put it on your PATH. Then run `cloakroom share` again.
 
-**"permission denied: ./cloakroom"**
-Run `chmod +x cloakroom start.sh stop.sh install.sh` once, or use `bash cloakroom …`.
+**Tabs crash ("Aw, Snap!") or it's slow.** Quit other heavy apps and run `cloakroom start` again. OrbStack's memory settings are in the OrbStack app.
 
-**"cloudflared is not installed"**
-On a Mac: `brew install cloudflared`. Without Homebrew, download the binary from [Cloudflare's downloads](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/downloads/) and put `cloudflared` on your PATH (the Mac installer does this). Then run `cloakroom share` again.
+**"License" or "concurrent session" errors.** A free key allows one browser session at a time. Stop other CloakBrowser sessions (including `examples/cloaktest.sh`) or leave the key blank.
 
-**"port is already allocated"**
-Something else uses 9222 or 6080 (often a Chrome started with remote debugging). Close it, or change the ports in `.env`.
-
-**Tabs crash ("Aw, Snap!") or it's slow**
-Quit other heavy apps and run `cloakroom start` again. OrbStack's memory settings are in the OrbStack app.
-
-**Apple Silicon**
-Runs natively. You don't need Rosetta.
-
-**"License" or "concurrent session" errors**
-A free key allows one browser session at a time. Stop other CloakBrowser sessions (including `examples/cloaktest.sh`) or leave the key blank.
-
-**Logs / start fresh**
-`docker compose logs -f cloakroom` shows the browser server's log. `docker compose down -v` deletes the saved profile, which logs you out of everything.
+**Logs, or start fresh.** `docker compose logs -f cloakroom` shows the browser's log. `docker compose down -v` deletes the saved profile, which signs you out of everything.
 
 ---
 
 ## Windows
 
-The browser and viewer work on Windows with Docker Desktop. The one-line installer is Mac-only because it sets up OrbStack. The code handoff is the same: `amazon-login` emits `waiting_for_otp`, and the assistant POSTs the code. You can also type the code in the viewer.
+The browser and viewer also run on Windows with Docker Desktop. The one-line installer is Mac-only.
 
-Phone viewer: install [cloudflared](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/downloads/) (`winget install --id Cloudflare.cloudflared`), then run `cloakroom share` from Git Bash or the same `./cloakroom` launcher. `cloakroom unshare` stops it.
-
-1. Install [Docker Desktop for Windows](https://www.docker.com/products/docker-desktop/). It needs **WSL 2**, and the installer offers to turn it on. Restart, open Docker Desktop, and wait for **Engine running**.
+1. Install [Docker Desktop for Windows](https://www.docker.com/products/docker-desktop/) (it needs WSL 2), restart, and wait for **Engine running**.
 2. Download this repo (**Code > Download ZIP**, then Extract All) or `git clone` it.
-3. In PowerShell, in the `cloakroom` folder:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\start.ps1
-```
-
-4. Try it: `docker compose run --rm hello` opens example.com in the browser and prints its title.
+3. In PowerShell, in the `cloakroom` folder: `powershell -ExecutionPolicy Bypass -File .\start.ps1`
+4. Try it: `docker compose run --rm hello` opens example.com and prints its title.
 5. Stop: `powershell -ExecutionPolicy Bypass -File .\stop.ps1`
+
+For the phone viewer, install `cloudflared` (`winget install --id Cloudflare.cloudflared`) and run `cloakroom share` from Git Bash.
 
 ---
 
@@ -228,29 +186,13 @@ powershell -ExecutionPolicy Bypass -File .\start.ps1
 
 ### What's running
 
-- **`cloakroom` container**: built from the official `cloakhq/cloakbrowser` image plus x11vnc and noVNC ([`image/Dockerfile`](image/Dockerfile)). It runs [`cloakserve`](https://github.com/CloakHQ/CloakBrowser#cdp-server-mode) with `--headless=false`, so Chromium is headed on a virtual display (Xvfb). Headed mode passes more bot checks, and it's what the viewer shows. It has `shm_size: 2gb` (Chromium crashes with Docker's 64 MB default) and a healthcheck on `/json/version`.
-- **Volumes**: `profile` holds the browser profile (`/profile/default`, which keeps you logged in), and `binary-cache` (`~/.cloakbrowser`) keeps a licensed binary so it downloads once. `cloakserve` normally deletes its profile folder on exit. [`image/cloakroom-serve.sh`](image/cloakroom-serve.sh) points that folder at the volume through a symlink that `cloakserve` refuses to delete.
-- **`cloakroom` CLI** (on your Mac, [`cli/`](cli/)): Python with the Playwright client in `cli/.venv`, created on first run. It needs no browser download, because it drives the Docker browser over CDP. `start`/`stop` call [`start.sh`](start.sh)/[`stop.sh`](stop.sh), which also work on their own.
-
-### Connect your own scripts (CDP)
-
-The browser speaks the Chrome DevTools Protocol at `http://127.0.0.1:9222`:
-
-```python
-from playwright.sync_api import sync_playwright
-
-with sync_playwright() as pw:
-    browser = pw.chromium.connect_over_cdp("http://127.0.0.1:9222")
-    page = browser.contexts[0].new_page()   # contexts[0] = the saved, logged-in profile
-    page.goto("https://www.amazon.com/gp/css/order-history")
-    print(page.title())
-```
-
-`browser.close()` on a CDP connection only disconnects your script, and the browser keeps running. [`examples/hello.py`](examples/hello.py) is the smallest example (`docker compose run --rm hello`).
+- **`cloakroom` container:** the official `cloakhq/cloakbrowser` image plus x11vnc and noVNC ([`image/Dockerfile`](image/Dockerfile)). It runs [`cloakserve`](https://github.com/CloakHQ/CloakBrowser#cdp-server-mode) headed on a virtual display, which passes more bot checks and is what the viewer shows. It has `shm_size: 2gb` (Chromium crashes with the 64 MB default) and a healthcheck on `/json/version`.
+- **Volumes:** `profile` holds the browser profile (cookies and logins). `binary-cache` keeps a licensed binary so it downloads once. [`image/cloakroom-serve.sh`](image/cloakroom-serve.sh) keeps `cloakserve` from deleting the profile on exit.
+- **`cloakroom` command** ([`cli/`](cli/)): a small Python tool with no dependencies. `start`/`stop` run [`start.sh`](start.sh)/[`stop.sh`](stop.sh), which also work on their own; `share` runs `cloudflared`.
 
 ### Extra identities
 
-Add `?fingerprint=<seed>` to the CDP URL for a separate identity with its own fingerprint, e.g. `http://127.0.0.1:9222?fingerprint=11111&timezone=Europe/Berlin`. Only the default identity is saved to the `profile` volume. See [upstream docs](https://github.com/CloakHQ/CloakBrowser#cdp-server-mode) for all parameters.
+Add `?fingerprint=<seed>` to the CDP URL for a separate identity, e.g. `http://127.0.0.1:9222?fingerprint=11111&timezone=Europe/Berlin`. Only the default identity is saved to the `profile` volume. See the [upstream docs](https://github.com/CloakHQ/CloakBrowser#cdp-server-mode) for all parameters.
 
 ### Stealth test, updates, plain Compose
 
@@ -260,20 +202,11 @@ Add `?fingerprint=<seed>` to the CDP URL for a separate identity with its own fi
 
 ---
 
-## Security and privacy
-
-- **Ports 9222 and 6080 stay on `127.0.0.1`.** Port 9222 gives full control of a browser that's logged in to your accounts, and the viewer has no password. Do not publish either port, and do not use Tailscale or Funnel. The phone path is `cloakroom share`: a Cloudflare quick tunnel to the viewer only. The `https://….trycloudflare.com` link is a capability URL — anyone who has it can control the logged-in browser. Run `cloakroom unshare` when you are done. The link changes every time you share. The tunnel never includes port 9222.
-- **Passwords** live in the macOS Keychain (`cloakroom creds set`) or are typed by you in the viewer. They're never kept in the repo, `.env`, or agent chat. The email is kept in `~/.cloakroom/amazon.json`.
-- **One-time codes** are read by the assistant (Grok Bot or Muse) from Messages. Cloakroom only receives the code on `127.0.0.1` and types it into the browser. It does not read Messages, and it does not log the code.
-- `.env` (license key, proxy password) is git-ignored.
-
----
-
 ## Links and license
 
-- CloakBrowser (upstream): <https://github.com/CloakHQ/CloakBrowser>
+- CloakBrowser: <https://github.com/CloakHQ/CloakBrowser> (it targets Cloudflare Turnstile, HUMAN / PerimeterX, Akamai, DataDome, and Kasada)
 - Free license key: <https://cloakbrowser.dev/free>
 - Docker image: <https://hub.docker.com/r/cloakhq/cloakbrowser>
 - OrbStack: <https://orbstack.dev/>
 
-Cloakroom's own code is [MIT licensed](LICENSE). The CloakBrowser binary inside the official image belongs to CloakHQ and has its own [Binary License](https://github.com/CloakHQ/CloakBrowser/blob/main/BINARY-LICENSE.md). See [NOTICE](NOTICE). Cloakroom is an independent community project, isn't affiliated with Amazon or CloakHQ, and doesn't guarantee any site's bot checks will pass. Use it only with your own accounts and follow each site's terms.
+Cloakroom's own code is [MIT licensed](LICENSE). The CloakBrowser binary inside the official image belongs to CloakHQ and has its own [Binary License](https://github.com/CloakHQ/CloakBrowser/blob/main/BINARY-LICENSE.md). See [NOTICE](NOTICE). Cloakroom is an independent community project, not affiliated with CloakHQ or any site mentioned here.
