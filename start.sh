@@ -99,7 +99,7 @@ done
 
 if [ "$status" != "healthy" ]; then
   docker compose logs --tail 40 cloakroom
-  fail "The browser did not become ready (status: $status). See the log above, or README > Troubleshooting."
+  fail "The browser did not become ready (status: $status). See the log above, or skills/cloakroom/SKILL.md > Troubleshooting."
 fi
 
 viewer_url="http://$(docker compose port cloakroom 6080)"

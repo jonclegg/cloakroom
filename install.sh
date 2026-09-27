@@ -185,7 +185,7 @@ link_cli() {
 }
 
 if [ "$(uname)" != "Darwin" ]; then
-  fail "This installer is for a Mac. On Windows, use start.ps1 (see the README)."
+  fail "This installer is for a Mac. On Windows, use start.ps1 (see skills/cloakroom/SKILL.md > Windows)."
 fi
 
 ensure_orbstack
