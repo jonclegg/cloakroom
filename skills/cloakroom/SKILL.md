@@ -1,23 +1,23 @@
 ---
 name: cloakroom
-description: Drive a stealth CloakBrowser running under OrbStack on the user's Mac, over CDP, with a persistent profile that keeps cookies and logins. Use when a site bot-walls your cloud browser, when a session needs to survive between runs, or when the user says "use cloakroom", "do X with cloakroom", or "share the viewer". Enter sites through a Bing organic result and humanize Playwright input; do not open the target with page.goto. If a site asks for a two-factor code, you (Grok Bot or Muse) get it and type it in; Cloakroom never reads Messages. When the user wants the viewer on a phone or away from home, run `cloakroom share` and send the HTTPS URL immediately. Do not ask them to confirm. Do not use Tailscale.
+description: Drive a stealth CloakBrowser on the user's Mac (OrbStack) or Linux machine (Docker Engine), over CDP, with a persistent profile that keeps cookies and logins. Use when a site bot-walls your cloud browser, when a session needs to survive between runs, or when the user says "use cloakroom", "do X with cloakroom", or "share the viewer". Enter sites through a Bing organic result and humanize Playwright input; do not open the target with page.goto. If a site asks for a two-factor code, you (Grok Bot or Muse) get it and type it in; Cloakroom never reads Messages. When the user wants the viewer on a phone or away from home, run `cloakroom share` and send the HTTPS URL immediately. Do not ask them to confirm. Do not use Tailscale.
 ---
 
 # Cloakroom skill
 
 Cloakroom is a local CLI: `cloakroom`, or `./cloakroom` from this repo. It is plain bash (no Python needed on the host).
-It controls a stealth Chromium in OrbStack (`cloakhq/cloakbrowser`). The browser, the viewer, and the saved profile stay on the machine.
+It controls a stealth Chromium (`cloakhq/cloakbrowser`) in OrbStack on a Mac, or in Docker Engine on Linux. The browser, the viewer, and the saved profile stay on the machine.
 
 ```text
 Your agent ──► cloakroom ───────────────► start / stop / status / share
      │
-     └───────► CDP  http://127.0.0.1:9222 ─► CloakBrowser, headed, in OrbStack on the Mac
+     └───────► CDP  http://127.0.0.1:9222 ─► CloakBrowser, headed (OrbStack on Mac, Docker Engine on Linux)
                                               ├─ saved profile: cookies and logins persist
                                               └─ viewer: http://127.0.0.1:6080
                                                    └─ cloakroom share ──► private HTTPS link (phone)
 ```
 
-The browser keeps running in the background (as long as OrbStack runs) until `cloakroom stop`. Stopping keeps the profile.
+The browser keeps running in the background (as long as OrbStack or Docker Engine runs) until `cloakroom stop`. Stopping keeps the profile.
 
 ## Playbook
 
@@ -29,7 +29,7 @@ The browser keeps running in the background (as long as OrbStack runs) until `cl
 
    | Field | Value | What you do |
    | --- | --- | --- |
-   | `docker_running` | `false` | Run `cloakroom start`. That opens OrbStack (not Docker Desktop) and starts the browser. If OrbStack is missing, the user installs it from https://orbstack.dev/download. |
+   | `docker_running` | `false` | Run `cloakroom start`. On a Mac that opens OrbStack (not Docker Desktop). If OrbStack is missing, the user installs it from https://orbstack.dev/download. On Linux, Docker Engine must already be installed and `docker info` must succeed. |
    | `ready` | `false` | Run `cloakroom start` (first run downloads ~1 GB; allow up to 10 minutes). |
 
 2. **Drive the browser over CDP**
@@ -92,7 +92,7 @@ The browser keeps running in the background (as long as OrbStack runs) until `cl
 
 5. **Bring in the user when needed**
 
-   If a page needs a password, a puzzle, or a step you can't do, tell the user to finish it in the viewer at http://127.0.0.1:6080 (or run `cloakroom share` if they're away from the Mac), then continue. Never ask for a password in chat.
+   If a page needs a password, a puzzle, or a step you can't do, tell the user to finish it in the viewer at http://127.0.0.1:6080 (or run `cloakroom share` if they're away from this computer), then continue. Never ask for a password in chat.
 
 6. **Two-factor codes**
 
@@ -125,7 +125,7 @@ Every command takes `--json`.
 | Command | What it does |
 | --- | --- |
 | `cloakroom start` / `stop` | Start or stop the browser. The profile is kept. |
-| `cloakroom status --json` | Is OrbStack up, is the browser ready, and the viewer, CDP, and share URLs. Exits non-zero in text mode when not ready. |
+| `cloakroom status --json` | Is the container engine up, is the browser ready, and the viewer, CDP, and share URLs. Exits non-zero in text mode when not ready. |
 | `cloakroom share --json` | Start a private HTTPS link to the viewer and print it. |
 | `cloakroom unshare` | Stop that link. It stops working immediately. |
 
@@ -145,7 +145,10 @@ Every command takes `--json`.
 
 ### Install
 
-`install.sh` (Mac only): installs OrbStack with Homebrew (or opens https://orbstack.dev/download and waits for it in Applications), installs `cloudflared` (Homebrew, else the official binary into `~/.local/bin`), downloads Cloakroom to `~/.cloakroom/app`, links `cloakroom` onto the PATH, and runs `cloakroom start`. Apple Silicon runs natively.
+`install.sh` supports Mac and Linux. It downloads Cloakroom to `~/.cloakroom/app`, links `cloakroom` onto the PATH, installs `cloudflared`, and runs `cloakroom start`.
+
+- **Mac:** installs OrbStack with Homebrew (or opens https://orbstack.dev/download and waits for it in Applications). `cloudflared` comes from Homebrew, else the official Darwin tarball into `~/.local/bin`. Apple Silicon runs natively. PATH is added to `~/.zprofile` and `~/.zshrc`.
+- **Linux (amd64 or arm64):** requires Docker Engine and `docker compose` already working (`docker info`). It does not install Docker or OrbStack. `cloudflared` is the official GitHub binary (`cloudflared-linux-amd64` or `cloudflared-linux-arm64`) into `~/.local/bin`. PATH is added to bash and zsh profiles.
 
 ### Settings
 
@@ -154,7 +157,7 @@ Optional knobs live in `.env` (created from [`.env.example`](../../.env.example)
 ### Limits
 
 - No site is guaranteed. Bot checks change. A loaded homepage is not a login or a checkout.
-- Traffic leaves from the Mac's connection or `CLOAKROOM_PROXY`. A flagged IP, VPN, or datacenter proxy can still be challenged.
+- Traffic leaves from this computer's connection or `CLOAKROOM_PROXY`. A flagged IP, VPN, or datacenter proxy can still be challenged.
 - Grok Bot's **Route traffic through this computer** setting alone clears many IP blocks. Cloakroom is for sites that also fingerprint the browser (e.g. Sam's Club's press-and-hold page), or when the user wants a persistent local profile they can watch.
 - Cloakroom has no site-specific scripts. Use it only with the user's own accounts and within each site's terms.
 
@@ -171,15 +174,42 @@ Optional knobs live in `.env` (created from [`.env.example`](../../.env.example)
 | "OrbStack did not become ready" | User opens OrbStack from Applications, finishes first-run setup (may ask for the Mac password), then `cloakroom start`. |
 | "permission denied: ./cloakroom" | `chmod +x cloakroom start.sh stop.sh share.sh install.sh`, or `bash cloakroom …`. |
 | "port is already allocated" | Something else uses 9222 or 6080 (often a Chrome with remote debugging). Close it, or change the ports in `.env`. |
-| "cloudflared is not installed" | `brew install cloudflared`, or download from https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/downloads/ and put it on the PATH. |
+| "cloudflared is not installed" | Mac: `brew install cloudflared`. Linux: re-run `install.sh`, or download `cloudflared-linux-amd64` / `cloudflared-linux-arm64` from https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/downloads/ into `~/.local/bin`. |
+| "`docker info` failed" / permission denied | On Linux, start Docker (`sudo systemctl enable --now docker`) and add the user to the `docker` group (`sudo usermod -aG docker "$USER"`), then log in again. |
 | Tabs crash ("Aw, Snap!") or slow | Quit heavy apps and `cloakroom start`. Memory settings are in the OrbStack app. |
 | "License" / "concurrent session" errors | A free key allows one session at a time. Stop other CloakBrowser sessions (including `examples/cloaktest.sh`) or blank the key. |
 | Need logs | `docker compose logs -f cloakroom` from the repo. |
 | Direct URL shows a challenge, homepage would not | Do not reload the hot search or product URL. Enter through Bing, click the organic homepage, then search with the site's own box using humanized input. If a puzzle is already up, the user solves it in the viewer. |
 
+### Linux
+
+Browser and viewer run on Linux with Docker Engine (amd64 or arm64). The image is already headed on Xvfb, so a server does not need a monitor.
+
+Prerequisites:
+
+- [Docker Engine](https://docs.docker.com/engine/install/)
+- The Compose plugin: `docker compose version` must succeed. On Debian or Ubuntu: `sudo apt-get install docker-compose-plugin`
+- `docker info` must succeed for this user. If it says permission denied: `sudo usermod -aG docker "$USER"`, then log in again.
+
+Install:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/jonclegg/cloakroom/main/install.sh | sh # // pragma: allowlist secret
+```
+
+From a clone, once Docker is working:
+
+```bash
+./cloakroom start
+```
+
+CDP stays `http://127.0.0.1:9222`. The Bing-first playbook above is unchanged. Ports stay on `127.0.0.1`. `cloakroom share` tunnels the viewer (6080) only.
+
+Upstream CloakBrowser runs headed on Xvfb inside the image, so a server needs no monitor. `cloakserve` passes `--ignore-gpu-blocklist` so WebGL still works on that software GPU ([issue #58](https://github.com/CloakHQ/CloakBrowser/issues/58)). A home machine uses that machine's IP. A datacenter IP can still be challenged.
+
 ### Windows
 
-Browser and viewer run on Windows with Docker Desktop (WSL 2); the one-line installer is Mac-only.
+Browser and viewer run on Windows with Docker Desktop (WSL 2). The curl installer is for Mac and Linux.
 
 1. Install [Docker Desktop](https://www.docker.com/products/docker-desktop/), restart, wait for **Engine running**.
 2. Get the repo (Download ZIP or `git clone`).
@@ -204,3 +234,4 @@ For the phone viewer: `winget install --id Cloudflare.cloudflared`, then `cloakr
 - Free license key: https://cloakbrowser.dev/free
 - Docker image: https://hub.docker.com/r/cloakhq/cloakbrowser
 - OrbStack: https://orbstack.dev/
+- Docker Engine: https://docs.docker.com/engine/install/

@@ -1,5 +1,5 @@
 #!/bin/sh
-# One-step Mac install:
+# One-step install for Mac (OrbStack) or Linux (Docker Engine):
 #   curl -fsSL https://raw.githubusercontent.com/jonclegg/cloakroom/main/install.sh | sh # // pragma: allowlist secret
 set -eu
 
@@ -118,14 +118,21 @@ install_tree() {
   rm -rf "${tmp}"
 }
 
+host_arch_name() {
+  case "$(uname -s):$(uname -m)" in
+    Darwin:arm64) printf '%s\n' darwin-arm64 ;;
+    Darwin:x86_64) printf '%s\n' darwin-amd64 ;;
+    Linux:x86_64|Linux:amd64) printf '%s\n' linux-amd64 ;;
+    Linux:aarch64|Linux:arm64) printf '%s\n' linux-arm64 ;;
+    *) return 1 ;;
+  esac
+}
+
 cloudflared_asset() {
-  arch="$(uname -m)"
-  case "$arch" in
-    arm64) printf '%s\n' "cloudflared-darwin-arm64.tgz" ;;
-    x86_64) printf '%s\n' "cloudflared-darwin-amd64.tgz" ;;
-    *)
-      fail "No cloudflared build for ${arch}. Download one from https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/downloads/"
-      ;;
+  name="$(host_arch_name)" || fail "No cloudflared build for $(uname -s) $(uname -m). Download one from https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/downloads/"
+  case "$name" in
+    darwin-*) printf '%s\n' "cloudflared-${name}.tgz" ;;
+    *) printf '%s\n' "cloudflared-${name}" ;;
   esac
 }
 
@@ -137,15 +144,41 @@ install_cloudflared_binary() {
   echo "Downloading cloudflared from Cloudflare..."
   echo "  ${url}"
   echo "  Docs: https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/downloads/"
-  curl -fsSL -o "${tmp}/cloudflared.tgz" "${url}"
-  tar -xzf "${tmp}/cloudflared.tgz" -C "${tmp}"
   mkdir -p "${dest_dir}"
-  mv "${tmp}/cloudflared" "${dest_dir}/cloudflared"
+  case "$asset" in
+    *.tgz)
+      curl -fsSL -o "${tmp}/cloudflared.tgz" "${url}"
+      tar -xzf "${tmp}/cloudflared.tgz" -C "${tmp}"
+      mv "${tmp}/cloudflared" "${dest_dir}/cloudflared"
+      ;;
+    *)
+      curl -fsSL -o "${dest_dir}/cloudflared" "${url}"
+      ;;
+  esac
   chmod +x "${dest_dir}/cloudflared"
   rm -rf "${tmp}"
   PATH="${dest_dir}:${PATH}"
   export PATH
   echo "Installed cloudflared to ${dest_dir}/cloudflared"
+}
+
+ensure_linux_docker() {
+  if ! command -v docker >/dev/null 2>&1 || ! docker info >/dev/null 2>&1; then
+    fail "Docker Engine is not available.
+Install Docker Engine, then make sure 'docker info' works for this user:
+  https://docs.docker.com/engine/install/
+If Docker is installed but 'docker info' fails, start it and join the docker group, then log in again:
+  sudo systemctl enable --now docker
+  sudo usermod -aG docker \"\$USER\""
+  fi
+  if ! docker compose version >/dev/null 2>&1; then
+    fail "Docker is running, but the 'docker compose' plugin is missing.
+Install the Compose plugin, then run this installer again:
+  https://docs.docker.com/compose/install/linux/
+On Debian or Ubuntu:
+  sudo apt-get update && sudo apt-get install docker-compose-plugin"
+  fi
+  echo "Docker Engine is running."
 }
 
 ensure_cloudflared() {
@@ -164,6 +197,20 @@ ensure_cloudflared() {
   install_cloudflared_binary
 }
 
+ensure_path_line() {
+  line='export PATH="$HOME/.local/bin:$PATH"'
+  rc="$1"
+  case "$rc" in
+    "${HOME}/.bash_profile")
+      [ -f "$rc" ] || return 0
+      ;;
+  esac
+  if [ -f "$rc" ] && grep -qxF "$line" "$rc"; then
+    return 0
+  fi
+  printf '\n%s\n' "$line" >> "$rc"
+}
+
 link_cli() {
   target="${INSTALL_DIR}/cloakroom"
   chmod +x "${target}" "${INSTALL_DIR}/start.sh" "${INSTALL_DIR}/stop.sh" "${INSTALL_DIR}/share.sh" "${INSTALL_DIR}/install.sh"
@@ -173,22 +220,36 @@ link_cli() {
   fi
   mkdir -p "${HOME}/.local/bin"
   ln -sf "${target}" "${HOME}/.local/bin/cloakroom"
-  line='export PATH="$HOME/.local/bin:$PATH"'
-  for rc in "${HOME}/.zprofile" "${HOME}/.zshrc"; do
-    if [ -f "$rc" ] && grep -qxF "$line" "$rc"; then
-      continue
-    fi
-    printf '\n%s\n' "$line" >> "$rc"
-  done
+  if [ "$(uname -s)" = "Darwin" ]; then
+    ensure_path_line "${HOME}/.zprofile"
+    ensure_path_line "${HOME}/.zshrc"
+  else
+    ensure_path_line "${HOME}/.bashrc"
+    ensure_path_line "${HOME}/.profile"
+    ensure_path_line "${HOME}/.bash_profile"
+    ensure_path_line "${HOME}/.zshrc"
+    ensure_path_line "${HOME}/.zprofile"
+  fi
   export PATH="${HOME}/.local/bin:${PATH}"
   echo "Installed cloakroom to ${HOME}/.local/bin/cloakroom"
+  if [ "$(uname -s)" = "Linux" ]; then
+    echo "Open a new terminal so PATH includes ~/.local/bin."
+  fi
 }
 
-if [ "$(uname)" != "Darwin" ]; then
-  fail "This installer is for a Mac. On Windows, use start.ps1 (see skills/cloakroom/SKILL.md > Windows)."
-fi
+case "$(uname -s)" in
+  Darwin)
+    ensure_orbstack
+    ;;
+  Linux)
+    host_arch_name >/dev/null || fail "Cloakroom on Linux supports amd64 (x86_64) and arm64 (aarch64). This machine is $(uname -m)."
+    ensure_linux_docker
+    ;;
+  *)
+    fail "This installer supports macOS and Linux. On Windows, use start.ps1 (see skills/cloakroom/SKILL.md > Windows)."
+    ;;
+esac
 
-ensure_orbstack
 ensure_cloudflared
 install_tree
 link_cli

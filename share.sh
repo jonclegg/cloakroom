@@ -85,6 +85,7 @@ if [ -z "$binary" ]; then
   cat >&2 <<EOF
 cloudflared is not installed.
 On a Mac with Homebrew: brew install cloudflared
+On Linux, re-run install.sh (it downloads the official binary into ~/.local/bin).
 Otherwise download it from ${DOWNLOADS}
 Then run: cloakroom share
 EOF
