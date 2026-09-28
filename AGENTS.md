@@ -13,6 +13,8 @@ cloakroom unshare                # stop the share when they are done
 
 Drive pages with Playwright: `connect_over_cdp("http://127.0.0.1:9222")`, then use `browser.contexts[0]` (the saved profile, with its cookies).
 
+**Bing-first entry and humanized input are the default.** Do not `page.goto` the target site, and do not open a search, listing, or product URL as the first navigation. Open `https://www.bing.com`, search the site name or domain, click the organic result (official domain, skip ads), then use that site's own search and links. Google-first often hits `/sorry/` from this CDP session; Bing is the gateway. Pause between actions, move the mouse in a short curve before each click, click a field before typing, and type character by character — [`examples/bing_first.py`](examples/bing_first.py) and [`examples/humanize.py`](examples/humanize.py). That avoids needless challenges. It does not bypass CAPTCHAs; the user still finishes puzzles in the viewer.
+
 If a site asks for a two-factor code, **you** (Grok Bot or Muse) get it (for example from Messages) and type it into the page. Cloakroom does not read iMessage.
 
 When the user wants the viewer on a phone, away from home, or any remote noVNC access, run `cloakroom share` and send the HTTPS URL in the same turn. Do not ask them to approve or confirm first. The command does not prompt. The URL is a secret capability link: anyone with it can control the logged-in browser. When they are done, run `cloakroom unshare`. Do **not** use Tailscale. Do **not** Funnel or port-forward. Never expose port 9222; `cloakroom share` tunnels the viewer (6080) only. Ports 6080 and 9222 stay bound to `127.0.0.1`.
