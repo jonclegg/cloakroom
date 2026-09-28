@@ -1,6 +1,6 @@
 ---
 name: cloakroom
-description: Drive a stealth CloakBrowser running under OrbStack on the user's Mac, over CDP, with a persistent profile that keeps cookies and logins. Use when a site bot-walls your cloud browser, when a session needs to survive between runs, or when the user says "use cloakroom", "do X with cloakroom", or "share the viewer". If a site asks for a two-factor code, you (Grok Bot or Muse) get it and type it in; Cloakroom never reads Messages. When the user wants the viewer on a phone or away from home, run `cloakroom share` and send the HTTPS URL immediately. Do not ask them to confirm. Do not use Tailscale.
+description: Drive a stealth CloakBrowser running under OrbStack on the user's Mac, over CDP, with a persistent profile that keeps cookies and logins. Use when a site bot-walls your cloud browser, when a session needs to survive between runs, or when the user says "use cloakroom", "do X with cloakroom", or "share the viewer". Enter sites through a Bing organic result and humanize Playwright input; do not open the target with page.goto. If a site asks for a two-factor code, you (Grok Bot or Muse) get it and type it in; Cloakroom never reads Messages. When the user wants the viewer on a phone or away from home, run `cloakroom share` and send the HTTPS URL immediately. Do not ask them to confirm. Do not use Tailscale.
 ---
 
 # Cloakroom skill
@@ -34,27 +34,67 @@ The browser keeps running in the background (as long as OrbStack runs) until `cl
 
 2. **Drive the browser over CDP**
 
+   Connect, then enter the site with Bing (step 3). [`examples/hello.py`](../../examples/hello.py) runs that path for `example.com`. The steps live in [`examples/bing_first.py`](../../examples/bing_first.py); mouse and typing live in [`examples/humanize.py`](../../examples/humanize.py).
+
    ```python
    from playwright.sync_api import sync_playwright
+   import bing_first  # examples/bing_first.py
 
    with sync_playwright() as pw:
        browser = pw.chromium.connect_over_cdp("http://127.0.0.1:9222")
        page = browser.contexts[0].new_page()
-       page.goto("https://www.homedepot.com")
-       print(page.title())
+       # Bing gateway, then the organic result. Not page.goto of the target.
+       landed = bing_first.open_via_bing(page, "example.com")
+       print(landed.title())
    ```
 
-   [`examples/hello.py`](../../examples/hello.py) is the smallest example. Puppeteer or any tool that attaches to an existing Chrome works too.
+   Puppeteer or any tool that attaches to an existing Chrome works too. Same entry rule: Bing first, then humanized input on the site.
 
    If Playwright isn't installed, `pip install playwright` is enough. Skip `playwright install`: you attach to the running browser, so no browser download is needed.
 
    `browser.contexts[0]` is the persistent profile: cookies and logins from earlier runs are already there. Don't create a new context unless you want a clean session. `browser.close()` only disconnects you; the browser keeps running.
 
-3. **Bring in the user when needed**
+3. **Entering a website**
+
+   Default for every new site:
+
+   1. `page.goto("https://www.bing.com")` — this is the gateway, not the destination.
+   2. Search the site name or domain. Click the search button.
+   3. Click the **organic** result for that site. Prefer the official domain. Skip ads (`li.b_algo` is Bing's organic block; skip `.b_ad`).
+   4. Stay on that site. Use its own search box and links.
+
+   Do **not** open the target with `page.goto` as the first navigation. Do **not** jump straight to a search, listing, or product URL (`/trade/search`, deep product SERPs, and the same kind of hot scrape URL on other sites). Those direct loads are what get challenged.
+
+   Google-first search from this CDP session often lands on Google `/sorry/` (unusual-traffic reCAPTCHA). **Bing is the search gateway** for Cloakroom. Do not start at Google.
+
+   The one direct-URL exception: the user handed you one exact page to open (a login URL they named, a doc they linked). You may open that URL. Still humanize everything after it loads. If that URL is challenged and the homepage is not, leave it and come back through Bing, then use the site's own UI.
+
+4. **Humanize interactions**
+
+   Drive the page like a person whenever you are on Bing or on the destination site. [`examples/humanize.py`](../../examples/humanize.py) is the default implementation (`pause`, `human_move`, `human_click`, `human_type`). Copy that behavior in ad-hoc scripts too.
+
+   - Short random pauses between actions (a few tenths of a second up to a couple of seconds).
+   - Before each click, `mouse.move` along a short curved path with a little jitter, then click. A single instant jump to the target reads as a script.
+   - Click the input with the mouse before typing. Do not `fill()` on a bot-sensitive site.
+   - Type character by character with jittered delays, including a slightly longer pause after some spaces.
+   - Prefer clicking real buttons and links over `page.goto` once you are on the site. In-site search goes through the site's search box, then its Search button:
+
+   ```python
+   import humanize  # examples/humanize.py
+
+   box = page.locator("input[type='search']").first
+   humanize.human_click(page, box)
+   humanize.human_type(page, "your query")
+   humanize.human_click(page, page.get_by_role("button", name="Search"))
+   ```
+
+   This is how you avoid extra challenges. It is not a captcha bypass. Do not drag sliders, call solving services, or replay challenge tokens. If a puzzle is on screen, stop and let the user finish it in the viewer.
+
+5. **Bring in the user when needed**
 
    If a page needs a password, a puzzle, or a step you can't do, tell the user to finish it in the viewer at http://127.0.0.1:6080 (or run `cloakroom share` if they're away from the Mac), then continue. Never ask for a password in chat.
 
-4. **Two-factor codes**
+6. **Two-factor codes**
 
    You fetch codes. Cloakroom does not. It never reads Messages, `chat.db`, or Full Disk Access. When a site asks for a code, read it yourself (for example from Messages) and type it into the page. If you can't read it, ask the user to type it in the viewer. Do not ask them to paste it into chat, and never repeat the code.
 
@@ -97,7 +137,9 @@ Every command takes `--json`.
 - Cloakroom does not read iMessage. You do, if a code is needed.
 - Ports 9222 and 6080 stay on `127.0.0.1`.
 - Remote viewer access is one command: `cloakroom share`. Run it and send the URL immediately. Do not ask for approval first, and do not add a confirmation step. The URL is a secret capability link. Run `cloakroom unshare` when the user is done. Do not use Tailscale, Funnel, or port forwards. Never tunnel 9222.
-- Don't bypass CAPTCHAs. When a page shows a puzzle, the user finishes it in the viewer.
+- Enter sites through Bing: search the name or domain, click the organic result, then use the site's own UI. Do not `page.goto` the target, and do not open search, listing, or product URLs as the first navigation. Google-first often hits `/sorry/` from Cloakroom CDP; Bing is the gateway.
+- Humanize Playwright input by default: random pauses, a curved `mouse.move` before clicks, click a field before typing, type character by character. Do not `fill()` bot-sensitive forms. Helpers: [`examples/humanize.py`](../../examples/humanize.py), entry: [`examples/bing_first.py`](../../examples/bing_first.py).
+- Don't bypass CAPTCHAs. Humanizing is how you avoid needless challenges. When a page shows a puzzle, the user finishes it in the viewer.
 
 ## Reference
 
@@ -133,6 +175,7 @@ Optional knobs live in `.env` (created from [`.env.example`](../../.env.example)
 | Tabs crash ("Aw, Snap!") or slow | Quit heavy apps and `cloakroom start`. Memory settings are in the OrbStack app. |
 | "License" / "concurrent session" errors | A free key allows one session at a time. Stop other CloakBrowser sessions (including `examples/cloaktest.sh`) or blank the key. |
 | Need logs | `docker compose logs -f cloakroom` from the repo. |
+| Direct URL shows a challenge, homepage would not | Do not reload the hot search or product URL. Enter through Bing, click the organic homepage, then search with the site's own box using humanized input. If a puzzle is already up, the user solves it in the viewer. |
 
 ### Windows
 
@@ -141,7 +184,7 @@ Browser and viewer run on Windows with Docker Desktop (WSL 2); the one-line inst
 1. Install [Docker Desktop](https://www.docker.com/products/docker-desktop/), restart, wait for **Engine running**.
 2. Get the repo (Download ZIP or `git clone`).
 3. In PowerShell in the repo: `powershell -ExecutionPolicy Bypass -File .\start.ps1`
-4. Test: `docker compose run --rm hello` prints example.com's title.
+4. Test: `docker compose run --rm hello` enters example.com through Bing and prints the title.
 5. Stop: `powershell -ExecutionPolicy Bypass -File .\stop.ps1`
 
 For the phone viewer: `winget install --id Cloudflare.cloudflared`, then `cloakroom share` from Git Bash.
