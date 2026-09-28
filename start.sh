@@ -67,15 +67,28 @@ Open OrbStack from Applications and finish its setup, then run this again.
   docker context use orbstack >/dev/null
   echo "Using OrbStack."
 elif ! command -v docker >/dev/null 2>&1 || ! docker info >/dev/null 2>&1; then
-  fail "OrbStack is not installed, and no container engine is running.
+  if [ "$(uname)" = "Darwin" ]; then
+    fail "OrbStack is not installed, and no container engine is running.
 On a Mac, install Cloakroom with one command:
   curl -fsSL ${CLOAKROOM_INSTALL_URL} | sh
 Or install OrbStack, open it, then run this again:
   https://orbstack.dev/download"
+  fi
+  fail "Docker Engine is not available.
+Install Docker Engine, then make sure 'docker info' works for this user:
+  https://docs.docker.com/engine/install/
+If Docker is installed but 'docker info' fails, start it and join the docker group, then log in again:
+  sudo systemctl enable --now docker
+  sudo usermod -aG docker \"\$USER\""
 fi
 
 if ! docker compose version >/dev/null 2>&1; then
-  fail "This container engine is missing 'docker compose'. Update OrbStack and run this again."
+  if [ "$(uname)" = "Darwin" ]; then
+    fail "This container engine is missing 'docker compose'. Update OrbStack and run this again."
+  fi
+  fail "This container engine is missing 'docker compose'.
+Install the Docker Compose plugin and run this again.
+  https://docs.docker.com/compose/install/linux/"
 fi
 
 if [ ! -f .env ]; then
@@ -120,4 +133,6 @@ EOF
 
 if [ "$(uname)" = "Darwin" ]; then
   open "$viewer_url"
+elif { [ -n "${DISPLAY:-}" ] || [ -n "${WAYLAND_DISPLAY:-}" ]; } && command -v xdg-open >/dev/null 2>&1; then
+  xdg-open "$viewer_url" >/dev/null 2>&1 </dev/null &
 fi
