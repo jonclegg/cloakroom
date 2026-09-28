@@ -1,6 +1,15 @@
-# Cloakroom
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/brand/cloakroom-logo-dark.svg">
+    <img alt="Cloakroom" src="docs/brand/cloakroom-logo.svg" width="380">
+  </picture>
+</p>
 
 **A stealth browser on your Mac for AI agents: fewer bot walls, and logins that stick.**
+
+[![Watch the explainer (1:28)](docs/media/cloakroom-explainer-thumb.png)](docs/media/cloakroom-explainer.mp4)
+
+Watch the [explainer video](docs/media/cloakroom-explainer.mp4) (1:28), or see the [project page](https://jonclegg.github.io/cloakroom/). <!-- pragma: allowlist secret -->
 
 ## Quickstart
 
@@ -12,11 +21,13 @@ curl -fsSL https://raw.githubusercontent.com/jonclegg/cloakroom/main/install.sh 
 
 Or just hand it this repo's URL. That's the whole setup. Your agent reads the instructions here and handles the rest. Mac only.
 
-## Why
+## Why Cloakroom
 
 Cloud agents browse from datacenter servers. Big sites see a datacenter IP and an automated browser, and they put up a bot wall. Every session also starts fresh, so the login from yesterday is gone today.
 
-Cloakroom brings the browser home. It runs [CloakBrowser](https://github.com/CloakHQ/CloakBrowser), a stealth build of Chromium, on your own Mac with one saved profile. Your agent drives it from wherever it runs.
+Cloakroom brings the browser home. It runs [CloakBrowser](https://github.com/CloakHQ/CloakBrowser), a stealth build of Chromium, in OrbStack on your own Mac with one saved profile. Your agent drives it over CDP from wherever it runs.
+
+How the agent drives it matters too. It enters each site from a Bing search result, moves the mouse and types like a person, and searches with the site's own search box. Starting at Google, or jumping straight to a hot search URL, is what tends to bring up a puzzle. Humanized input avoids needless challenges. It doesn't solve them: when a puzzle shows up, you finish it in the viewer.
 
 ## What you get
 
@@ -26,6 +37,8 @@ Cloakroom brings the browser home. It runs [CloakBrowser](https://github.com/Clo
 - **Standard CDP.** Playwright, Puppeteer, or anything else that speaks the Chrome DevTools Protocol connects to `127.0.0.1:9222`. No SDK.
 
 **Proof:** on September 26, 2026, a cloud browser was blocked on twelve big homepages (Home Depot, Ticketmaster, Sam's Club, and others). Cloakroom loaded all twelve.
+
+The explainer also shows real screenshots: Google's `/sorry/` page after Google-first automation, Alibaba's slider after loading its search URL directly, and Alibaba's results after entering through Bing and searching with humanized input. They're in [`docs/media/evidence`](docs/media/evidence).
 
 ## Text-message codes (2FA)
 

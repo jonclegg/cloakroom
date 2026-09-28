@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cloakroom · a stealth browser on your Mac for AI agents</title>
+<meta name="description" content="Cloakroom runs CloakBrowser, a stealth Chromium, in OrbStack on your Mac with one saved profile. Your agent drives it over CDP: fewer bot walls, and logins that stick.">
+<meta property="og:title" content="Cloakroom">
+<meta property="og:description" content="A stealth browser on your Mac for AI agents. Fewer bot walls. Logins that stick.">
+<meta property="og:image" content="https://jonclegg.github.io/cloakroom/media/cloakroom-explainer-poster.png"> <!-- pragma: allowlist secret -->
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="brand/cloakroom-mark.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="brand/cloakroom-mark-128.png">
+<style>
+  :root {
+    --bg: #0A0F22;
+    --card: #10163A;
+    --line: rgba(148, 163, 184, 0.18);
+    --ink: #E2E8F0;
+    --muted: #94A3B8;
+    --teal: #5EEAD4;
+    --red: #F87171;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 17px/1.6 Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+    background-image:
+      radial-gradient(900px 600px at 10% -10%, rgba(79, 70, 229, 0.28), transparent 70%),
+      radial-gradient(900px 700px at 100% 40%, rgba(45, 212, 191, 0.10), transparent 70%);
+    background-repeat: no-repeat;
+  }
+  a { color: var(--teal); }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 24px; }
+  nav { display: flex; align-items: center; justify-content: space-between; padding: 22px 0; }
+  nav .links a { color: var(--muted); text-decoration: none; margin-left: 22px; font-weight: 500; }
+  nav .links a:hover { color: var(--ink); }
+  .hero { text-align: center; padding: 48px 0 28px; }
+  .hero img { width: min(440px, 80vw); height: auto; }
+  .hero h1 { font-size: clamp(30px, 4.4vw, 46px); line-height: 1.15; letter-spacing: -0.02em; margin: 28px 0 10px; }
+  .hero p { color: var(--muted); font-size: 20px; margin: 0; }
+  .install {
+    display: flex; align-items: center; gap: 12px; max-width: 940px; margin: 32px auto 10px;
+    padding: 14px 14px 14px 20px; border-radius: 14px; background: #050816;
+    border: 1px solid rgba(94, 234, 212, 0.35); text-align: left;
+  }
+  .install code { flex: 1; font: 15px/1.4 var(--mono); overflow-x: auto; white-space: nowrap; }
+  .install code::before { content: "$ "; color: var(--teal); }
+  .install button {
+    flex: none; font: 600 14px Inter, system-ui, sans-serif; color: var(--bg); background: var(--teal);
+    border: 0; border-radius: 9px; padding: 9px 14px; cursor: pointer;
+  }
+  .hint { color: var(--muted); font-size: 15px; text-align: center; }
+  video {
+    display: block; width: 100%; margin: 36px 0 0; border-radius: 18px;
+    border: 1px solid var(--line); box-shadow: 0 30px 90px rgba(0, 0, 0, 0.5); background: #000;
+  }
+  h2 { font-size: 30px; letter-spacing: -0.015em; margin: 72px 0 18px; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 18px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 22px 24px; }
+  .card h3 { margin: 0 0 8px; font-size: 19px; }
+  .card p { margin: 0; color: var(--muted); }
+  .kicker { font-size: 13px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: var(--teal); }
+  .kicker.bad { color: var(--red); }
+  code.inline { font: 0.92em var(--mono); color: var(--teal); }
+  figure { margin: 0; }
+  figure img { width: 100%; display: block; border-radius: 12px; border: 1px solid var(--line); background: #fff; }
+  figcaption { color: var(--muted); font-size: 15px; margin-top: 10px; }
+  .note { border-left: 3px solid var(--teal); padding: 4px 0 4px 18px; color: var(--muted); margin-top: 22px; }
+  footer { color: var(--muted); font-size: 14px; padding: 72px 0 48px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <nav>
+    <a href="./"><img src="brand/cloakroom-mark.svg" width="36" height="36" alt="Cloakroom"></a>
+    <div class="links">
+      <a href="https://github.com/jonclegg/cloakroom/blob/main/skills/cloakroom/SKILL.md">Agent guide</a> <!-- pragma: allowlist secret -->
+      <a href="https://github.com/jonclegg/cloakroom">GitHub</a> <!-- pragma: allowlist secret -->
+    </div>
+  </nav>
+
+  <section class="hero">
+    <img src="brand/cloakroom-logo-dark.svg" alt="Cloakroom">
+    <h1>A stealth browser on your Mac for AI agents.</h1>
+    <p>Fewer bot walls, and logins that stick.</p>
+    <div class="install">
+      <code id="cmd">curl -fsSL https://raw.githubusercontent.com/jonclegg/cloakroom/main/install.sh | sh</code> <!-- pragma: allowlist secret -->
+      <button type="button" id="copy">Copy</button>
+    </div>
+    <div class="hint">Tell your agent (Grok Bot, Muse, Cursor, Claude Code, Codex) to run it, or hand it the repo URL. Mac only.</div>
+    <video controls playsinline preload="metadata" poster="media/cloakroom-explainer-poster.png">
+      <source src="media/cloakroom-explainer.webm" type="video/webm">
+      <source src="media/cloakroom-explainer.mp4" type="video/mp4">
+    </video>
+  </section>
+
+  <h2>Why Cloakroom</h2>
+  <div class="cards">
+    <div class="card">
+      <div class="kicker bad">The problem</div>
+      <h3>Cloud agent browsers get bot-walled</h3>
+      <p>They browse from datacenter servers with an automated browser, so big sites put up a wall. Every session starts fresh, so yesterday's login is gone.</p>
+    </div>
+    <div class="card">
+      <div class="kicker">The fix</div>
+      <h3>Bring the browser home</h3>
+      <p>CloakBrowser (stealth Chromium) runs headed in OrbStack on your Mac with one saved profile. Agents connect over CDP at <code class="inline">127.0.0.1:9222</code>. You watch and help in the viewer at <code class="inline">127.0.0.1:6080</code>.</p>
+    </div>
+    <div class="card">
+      <div class="kicker">How agents drive it</div>
+      <h3>Enter like a person, not a script</h3>
+      <p>Start at Bing and click the organic result. Move the mouse and type like a person. Search with the site's own box, not a hot search URL.</p>
+    </div>
+  </div>
+  <p class="note">On September 26, 2026, a cloud Grok Bot browser was challenged or blocked on twelve big homepages (Home Depot, Ticketmaster, Sam's Club, and others). Cloakroom loaded all twelve. Homepages only; no site is guaranteed.</p>
+
+  <h2>Real screenshots</h2>
+  <div class="cards">
+    <figure>
+      <img src="media/evidence/google-sorry.png" alt="Google /sorry/ unusual traffic page with a reCAPTCHA">
+      <figcaption><span class="kicker bad">Google-first</span><br>Automation that started at Google got the <code class="inline">/sorry/</code> reCAPTCHA page.</figcaption>
+    </figure>
+    <figure>
+      <img src="media/evidence/alibaba-slider.png" alt="Alibaba slider verification page">
+      <figcaption><span class="kicker bad">Hot search URL</span><br>Loading Alibaba's search URL directly brought up a slider check.</figcaption>
+    </figure>
+    <figure>
+      <img src="media/evidence/alibaba-after-humanize.png" alt="Alibaba search results for outdoor linear gas fireplace propane">
+      <figcaption><span class="kicker">Bing + humanized</span><br>Same site, entered through Bing and searched with humanized input: real results.</figcaption>
+    </figure>
+  </div>
+  <p class="note">Cloakroom doesn't solve CAPTCHAs. Humanized input avoids needless ones. When a puzzle does show up, you finish it in the viewer, on your Mac or on your phone with <code class="inline">cloakroom share</code>.</p>
+
+  <h2>For agents</h2>
+  <p>Everything an agent needs (commands, JSON output, the Bing-first entry, humanized input, 2FA, the phone viewer) is in <a href="https://github.com/jonclegg/cloakroom/blob/main/skills/cloakroom/SKILL.md">the Cloakroom skill</a>. Examples: <a href="https://github.com/jonclegg/cloakroom/blob/main/examples/bing_first.py"><code class="inline">bing_first.py</code></a> and <a href="https://github.com/jonclegg/cloakroom/blob/main/examples/humanize.py"><code class="inline">humanize.py</code></a>.</p> <!-- pragma: allowlist secret -->
+
+  <footer>
+    Cloakroom's own code is <a href="https://github.com/jonclegg/cloakroom/blob/main/LICENSE">MIT licensed</a>. The CloakBrowser binary belongs to CloakHQ and has its own license. Cloakroom is an independent community project, not affiliated with CloakHQ or any site mentioned here. <!-- pragma: allowlist secret -->
+  </footer>
+</div>
+<script>
+  document.getElementById("copy").addEventListener("click", async (event) => {
+    await navigator.clipboard.writeText(document.getElementById("cmd").textContent);
+    event.target.textContent = "Copied";
+  });
+</script>
+</body>
+</html>
