@@ -147,12 +147,12 @@ install_cloudflared_binary() {
   mkdir -p "${dest_dir}"
   case "$asset" in
     *.tgz)
-      curl -fsSL -o "${tmp}/cloudflared.tgz" "${url}"
+      curl -fsSL --connect-timeout 30 --max-time 300 -o "${tmp}/cloudflared.tgz" "${url}"
       tar -xzf "${tmp}/cloudflared.tgz" -C "${tmp}"
       mv "${tmp}/cloudflared" "${dest_dir}/cloudflared"
       ;;
     *)
-      curl -fsSL -o "${dest_dir}/cloudflared" "${url}"
+      curl -fsSL --connect-timeout 30 --max-time 300 -o "${dest_dir}/cloudflared" "${url}"
       ;;
   esac
   chmod +x "${dest_dir}/cloudflared"
@@ -163,7 +163,11 @@ install_cloudflared_binary() {
 }
 
 ensure_linux_docker() {
-  if ! command -v docker >/dev/null 2>&1 || ! docker info >/dev/null 2>&1; then
+  if ! command -v timeout >/dev/null 2>&1; then
+    fail "The 'timeout' command is missing, so this installer will not run 'docker info'.
+A stuck Docker socket would hang the install. Install coreutils (it provides timeout), then run this installer again."
+  fi
+  if ! command -v docker >/dev/null 2>&1 || ! timeout 30 docker info >/dev/null 2>&1; then
     fail "Docker Engine is not available.
 Install Docker Engine, then make sure 'docker info' works for this user:
   https://docs.docker.com/engine/install/

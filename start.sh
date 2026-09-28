@@ -74,9 +74,12 @@ On a Mac, install Cloakroom with one command:
 Or install OrbStack, open it, then run this again:
   https://orbstack.dev/download"
   fi
-  fail "Docker Engine is not running.
-Install Docker Engine and make sure 'docker info' works, then run this again.
-  https://docs.docker.com/engine/install/"
+  fail "Docker Engine is not available.
+Install Docker Engine, then make sure 'docker info' works for this user:
+  https://docs.docker.com/engine/install/
+If Docker is installed but 'docker info' fails, start it and join the docker group, then log in again:
+  sudo systemctl enable --now docker
+  sudo usermod -aG docker \"\$USER\""
 fi
 
 if ! docker compose version >/dev/null 2>&1; then
@@ -131,5 +134,5 @@ EOF
 if [ "$(uname)" = "Darwin" ]; then
   open "$viewer_url"
 elif { [ -n "${DISPLAY:-}" ] || [ -n "${WAYLAND_DISPLAY:-}" ]; } && command -v xdg-open >/dev/null 2>&1; then
-  xdg-open "$viewer_url" >/dev/null 2>&1 || true
+  xdg-open "$viewer_url" >/dev/null 2>&1 </dev/null &
 fi
