@@ -11,6 +11,8 @@ services:
     env_file:
       - path: .env
         required: false
+    environment:
+      TZ: ${TZ:-America/Chicago}
     ports:
       # Localhost only. Anyone who can reach these ports controls the browser.
       - "127.0.0.1:${CLOAKROOM_CDP_PORT:-9222}:9222"

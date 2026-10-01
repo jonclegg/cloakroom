@@ -152,7 +152,7 @@ Every command takes `--json`.
 
 ### Settings
 
-Optional knobs live in `.env` (created from [`.env.example`](../../.env.example) on first start): license key, proxy, fingerprint seed, and ports. Edit `.env`, then `cloakroom stop` and `cloakroom start`. If you change `CLOAKROOM_CDP_PORT` / `CLOAKROOM_VIEWER_PORT`, export the same variables when running `cloakroom`.
+Optional knobs live in `.env` (created from [`.env.example`](../../.env.example) on first start): license key, proxy, fingerprint seed, timezone, and ports. Edit `.env`, then `cloakroom stop` and `cloakroom start`. If you change `CLOAKROOM_CDP_PORT` / `CLOAKROOM_VIEWER_PORT`, export the same variables when running `cloakroom`. Timezone comes from the host when `cloakroom start` can detect it, otherwise `America/Chicago`; set `TZ` in `.env` to override.
 
 ### Limits
 
