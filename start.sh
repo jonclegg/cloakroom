@@ -36,6 +36,59 @@ open_orbstack() {
   open "${HOME}/Applications/OrbStack.app" || echo "Waiting for OrbStack to finish starting..."
 }
 
+dotenv_defines_tz() {
+  [ -f .env ] || return 1
+  grep -qE '^[[:space:]]*TZ=' .env
+}
+
+detect_host_timezone() {
+  tz=""
+  if command -v timedatectl >/dev/null 2>&1; then
+    tz="$(timedatectl show -p Timezone --value 2>/dev/null || true)"
+  fi
+  case "$tz" in
+    ""|n/a) ;;
+    *) printf '%s\n' "$tz"; return 0 ;;
+  esac
+  if [ -f /etc/timezone ]; then
+    tz="$(tr -d '[:space:]' < /etc/timezone)"
+    if [ -n "$tz" ]; then
+      printf '%s\n' "$tz"
+      return 0
+    fi
+  fi
+  if [ -L /etc/localtime ]; then
+    link="$(readlink /etc/localtime)"
+    case "$link" in
+      *zoneinfo/*)
+        printf '%s\n' "${link#*zoneinfo/}"
+        return 0
+        ;;
+    esac
+  fi
+  return 1
+}
+
+timezone_name_ok() {
+  case "$1" in
+    ""|*..*|*[!A-Za-z0-9_+/-]*) return 1 ;;
+  esac
+}
+
+export_host_timezone() {
+  if [ -n "${TZ:-}" ]; then
+    return 0
+  fi
+  if dotenv_defines_tz; then
+    return 0
+  fi
+  tz="$(detect_host_timezone || true)"
+  if ! timezone_name_ok "$tz"; then
+    return 0
+  fi
+  export TZ="$tz"
+}
+
 if orbstack_app; then
   if ! docker --context orbstack info >/dev/null 2>&1; then
     echo "Starting OrbStack..."
@@ -95,6 +148,8 @@ if [ ! -f .env ]; then
   cp .env.example .env
   echo "Created .env with default settings (edit it later to add a license key or proxy)."
 fi
+
+export_host_timezone
 
 echo "1/3 Downloading the latest CloakBrowser image (first time can take a few minutes)..."
 docker compose pull hello --quiet

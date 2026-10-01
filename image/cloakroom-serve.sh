@@ -6,6 +6,19 @@ DATA_DIR=/tmp/cloakserve
 PROFILE_DIR=/profile/default
 PROFILE_KEY="${CLOAKROOM_FINGERPRINT_SEED:-__default__}"
 
+apply_container_timezone() {
+  [ -n "${TZ:-}" ] || return 0
+  zone="/usr/share/zoneinfo/${TZ}"
+  if [ ! -e "$zone" ]; then
+    echo "Timezone ${TZ} is not installed (${zone})." >&2
+    exit 1
+  fi
+  ln -snf "$zone" /etc/localtime
+  printf '%s\n' "$TZ" > /etc/timezone
+}
+
+apply_container_timezone
+
 mkdir -p "$DATA_DIR" "$PROFILE_DIR"
 rm -f "$PROFILE_DIR"/SingletonLock "$PROFILE_DIR"/SingletonSocket "$PROFILE_DIR"/SingletonCookie
 

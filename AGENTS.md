@@ -21,6 +21,8 @@ When the user wants the viewer on a phone, away from home, or any remote noVNC a
 
 Never ask the user for their password in chat. They type it in the viewer (http://127.0.0.1:6080, or the share URL).
 
+The browser inherits the host timezone via `TZ` when `cloakroom start` can detect it, otherwise `America/Chicago`. Override with `TZ=...` in `.env`.
+
 ## Linux
 
 Docker Engine and the `docker compose` plugin, on amd64 or arm64. `docker info` must succeed for this user (start the service, and add the user to the `docker` group if permission is denied).
