@@ -57,7 +57,7 @@ Because the profile keeps its cookies, most sites ask for a code only on the fir
 
 ## Good to know
 
-- No guarantees. Some sites will still block you.
+- Bot checks change, and new kinds show up. `cloakroom do` works the ones it implements, and you can always finish one yourself in the viewer.
 - Your IP still matters. Traffic leaves from this computer's connection, or from a proxy you set.
 - Only this computer can reach the browser. `cloakroom share` is the one way in from elsewhere, and it exposes only the viewer. Anyone with that link can control your logged-in browser, so keep it private and run `cloakroom unshare` when you're done.
 - The full reference for agents (and the curious) is in [AGENTS.md](AGENTS.md) and [the agent guide](skills/cloakroom/SKILL.md).

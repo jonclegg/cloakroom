@@ -1,11 +1,11 @@
 ---
 name: cloakroom
-description: Drive a stealth CloakBrowser on the user's Mac (OrbStack) or Linux machine (Docker Engine), over CDP, with a persistent profile that keeps cookies and logins. Use when a site bot-walls your cloud browser, when a session needs to survive between runs, or when the user says "use cloakroom", "do X with cloakroom", or "share the viewer". Enter sites through a Bing organic result and humanize Playwright input; do not open the target with page.goto. If a site asks for a two-factor code, you (Grok Bot or Muse) get it and type it in; Cloakroom never reads Messages. When the user wants the viewer on a phone or away from home, run `cloakroom share` and send the HTTPS URL immediately. Do not ask them to confirm. Do not use Tailscale.
+description: Drive a stealth CloakBrowser on the user's Mac (OrbStack) or Linux machine (Docker Engine), over CDP, with a persistent profile that keeps cookies and logins. Use when a site bot-walls your cloud browser, when a session needs to survive between runs, or when the user says "use cloakroom", "do X with cloakroom", or "share the viewer". Hand Cloakroom a goal with `cloakroom do` and it drives the browser itself with DeepSeek, working bot checks as they come up. Enter sites through a Bing organic result and humanize Playwright input; do not open the target with page.goto. If a site asks for a two-factor code, you (Grok Bot or Muse) get it and type it in; Cloakroom never reads Messages. When the user wants the viewer on a phone or away from home, run `cloakroom share` and send the HTTPS URL immediately. Do not ask them to confirm. Do not use Tailscale.
 ---
 
 # Cloakroom skill
 
-Cloakroom is a local CLI: `cloakroom`, or `./cloakroom` from this repo. It is plain bash (no Python needed on the host).
+Cloakroom is a local CLI: `cloakroom`, or `./cloakroom` from this repo. The CLI itself is plain bash; `cloakroom do` additionally needs `python3` with Playwright on the host (the same requirement as driving CDP yourself).
 It controls a stealth Chromium (`cloakhq/cloakbrowser`) in OrbStack on a Mac, or in Docker Engine on Linux. The browser, the viewer, and the saved profile stay on the machine.
 
 ```text
@@ -67,7 +67,7 @@ The browser keeps running in the background (as long as OrbStack or Docker Engin
 
    Google-first search from this CDP session often lands on Google `/sorry/` (unusual-traffic reCAPTCHA). **Bing is the search gateway** for Cloakroom. Do not start at Google.
 
-   The one direct-URL exception: the user handed you one exact page to open (a login URL they named, a doc they linked). You may open that URL. Still humanize everything after it loads. If that URL is challenged and the homepage is not, leave it and come back through Bing, then use the site's own UI.
+   The one direct-URL exception: the user handed you one exact page to open (a login URL they named, a doc they linked). You may open that URL. Still humanize everything after it loads. If that URL is challenged, work the challenge (`cloakroom do`) rather than retreating; fall back to Bing and the site's own UI only if the challenge won't clear.
 
 4. **Humanize interactions**
 
@@ -166,7 +166,16 @@ That is what makes clicks land: on Walmart's PerimeterX press-and-hold the model
 button centre to the pixel.
 
 **Bot checks.** `do` reports a bot check in the step output and in `--json` (`blocked`,
-`block_type`) and works it. Press-and-hold is a `hold` action of 8s or more. Two things to know:
+`block_type`) and works it, picking the action by kind:
+
+| `block_type` | Action | Notes |
+| --- | --- | --- |
+| `press_and_hold` | `hold` | PerimeterX and similar. 8s or more, at the button centre. |
+| `slider` | `drag` | Geetest, Alibaba. Eased path with jitter, not a teleport — these score the path, not just the endpoints. |
+| `checkbox` | `click` | reCAPTCHA v2 checkbox, Turnstile. Often just a click. |
+| `image_captcha` | `click` per tile | Best-effort: the model reads the prompt and clicks matching tiles one step at a time. Harder than the rest, and some of these run in cross-origin frames. |
+
+Two things to know about the hold:
 
 - **The challenge has to be fresh.** A PerimeterX press-and-hold that has been sitting on
   screen goes inert: holding it produces no progress and never clears. Hold a freshly served
@@ -203,8 +212,9 @@ Optional knobs live in `.env` (created from [`.env.example`](../../.env.example)
 
 ### Limits
 
-- No site is guaranteed. Bot checks change. A loaded homepage is not a login or a checkout.
-- Traffic leaves from this computer's connection or `CLOAKROOM_PROXY`. A flagged IP, VPN, or datacenter proxy can still be challenged.
+- Bot checks change and new ones appear. `cloakroom do` works the kinds it implements — press-and-hold today (PerimeterX and similar); others land as they come up. When it can't clear one, the user finishes it in the viewer and the agent carries on from there.
+- A loaded homepage is not a login or a checkout. The profile carries cookies and logins across runs, but a challenge can still appear later in a flow.
+- Traffic leaves from this computer's connection or `CLOAKROOM_PROXY`. A home connection is the strongest; a flagged IP, VPN, or datacenter proxy draws more challenges.
 - Grok Bot's **Route traffic through this computer** setting alone clears many IP blocks. Cloakroom is for sites that also fingerprint the browser (e.g. Sam's Club's press-and-hold page), or when the user wants a persistent local profile they can watch.
 - Cloakroom has no site-specific scripts. Use it only with the user's own accounts and within each site's terms.
 
@@ -252,7 +262,7 @@ From a clone, once Docker is working:
 
 CDP stays `http://127.0.0.1:9222`. The Bing-first playbook above is unchanged. Ports stay on `127.0.0.1`. `cloakroom share` tunnels the viewer (6080) only.
 
-Upstream CloakBrowser runs headed on Xvfb inside the image, so a server needs no monitor. `cloakserve` passes `--ignore-gpu-blocklist` so WebGL still works on that software GPU ([issue #58](https://github.com/CloakHQ/CloakBrowser/issues/58)). A home machine uses that machine's IP. A datacenter IP can still be challenged.
+Upstream CloakBrowser runs headed on Xvfb inside the image, so a server needs no monitor. `cloakserve` passes `--ignore-gpu-blocklist` so WebGL still works on that software GPU ([issue #58](https://github.com/CloakHQ/CloakBrowser/issues/58)). A home machine uses that machine's IP; a datacenter IP draws more challenges.
 
 ### Windows
 
