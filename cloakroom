@@ -20,6 +20,8 @@ Usage: cloakroom <command> [--json]
   status         Is it ready, and the viewer, CDP, and share URLs.
   share          Private HTTPS link to the viewer. No confirmation.
   unshare        Stop that link.
+  do "<goal>"    Hand Cloakroom a goal; it drives the browser with DeepSeek.
+                 Needs OPENROUTER_API_KEY and python3 with playwright.
 EOF
   exit 2
 }
@@ -52,5 +54,13 @@ case "$command" in
   status) status "$@" ;;
   share) exec bash "${CLOAKROOM_ROOT}/share.sh" "$@" ;;
   unshare) exec bash "${CLOAKROOM_ROOT}/share.sh" stop "$@" ;;
+  do)
+    python3="$(command -v python3 || true)"
+    if [ -z "$python3" ]; then
+      echo "cloakroom do needs python3 with playwright on the host." >&2
+      exit 1
+    fi
+    exec "$python3" "${CLOAKROOM_ROOT}/agent/cloakroom_agent.py" "$@"
+    ;;
   *) usage ;;
 esac

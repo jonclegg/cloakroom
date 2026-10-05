@@ -2,6 +2,7 @@
 
 import os
 import sys
+import time
 from urllib.parse import urlparse
 
 from playwright.sync_api import sync_playwright
@@ -91,33 +92,65 @@ def _organic_link(page, domain):
 
 ###############################################################################
 
-def _click_and_follow(page, link):
+def _click_and_follow(page, link, domain=None):
+    """Click a result and return the page it landed on.
+
+    Bing usually opens the target in a new tab through a `bing.com/ck/a`
+    redirect, and that tab can take several seconds to leave `about:blank`.
+    Waiting a fixed 0.8-1.6s and checking `context.pages` once misses it, so
+    the caller ends up still on Bing. Poll for the new tab, then wait for it
+    to reach a real URL.
+    """
     context = page.context
-    before = list(context.pages)
-    humanize.human_click(page, link)
+    before = set(context.pages)
+    start_url = page.url
+
+    landed = None
+    for attempt in range(3):
+        humanize.human_click(page, link)
+        deadline = time.time() + 12
+        while time.time() < deadline:
+            humanize.pause(0.25, 0.45)
+            opened = [item for item in context.pages if item not in before]
+            if opened:
+                landed = opened[-1]
+                break
+            if page.url != start_url:
+                landed = page
+                break
+        if landed is not None:
+            break
+        # Bing sometimes swallows the first click; click again.
+        humanize.pause(0.6, 1.1)
+    if landed is None:
+        landed = page
+
+    # Wait for the tab to leave about:blank / the Bing redirect.
+    deadline = time.time() + 20
+    while time.time() < deadline:
+        url = landed.url or ""
+        if url and url != "about:blank" and "chrome://" not in url:
+            if domain is None or _same_site(domain, url) or "bing.com" not in _host(url):
+                break
+        humanize.pause(0.3, 0.5)
+
+    try:
+        landed.wait_for_load_state("domcontentloaded", timeout=15000)
+    except Exception:  # noqa: BLE001 - a slow site is not a failure
+        pass
     humanize.pause(0.8, 1.6)
-    opened = [item for item in context.pages if item not in before]
-    if opened:
-        landed = opened[-1]
-        landed.wait_for_load_state("domcontentloaded")
-        return landed
-    page.wait_for_load_state("domcontentloaded")
-    return page
+    return landed
 
 ###############################################################################
 
-def open_via_bing(page, domain, query=None):
-    if query is None:
-        query = domain
-    page.goto(BING, wait_until="domcontentloaded")
-    humanize.pause(0.8, 1.6)
-    _dismiss_consent(page)
+def _enter(page, domain):
+    """One attempt: search the domain on Bing and click the organic result."""
     box = _first_visible(page, SEARCH_BOXES)
     if box is None:
         raise RuntimeError("Bing search box not found")
     humanize.human_click(page, box)
     humanize.pause(0.2, 0.5)
-    humanize.human_type(page, query)
+    humanize.human_type(page, domain)
     humanize.pause(0.4, 0.9)
     button = _first_visible(page, SEARCH_BUTTONS)
     if button is None:
@@ -126,7 +159,29 @@ def open_via_bing(page, domain, query=None):
     page.wait_for_load_state("domcontentloaded")
     humanize.pause(0.8, 1.6)
     link = _organic_link(page, domain)
-    return _click_and_follow(page, link)
+    return _click_and_follow(page, link, domain=domain)
+
+###############################################################################
+
+def open_via_bing(page, domain, query=None, attempts=2):
+    """Enter `domain` through Bing, retrying if the first click does not land."""
+    if query is None:
+        query = domain
+    landed = page
+    for attempt in range(attempts):
+        landed.goto(BING, wait_until="domcontentloaded")
+        humanize.pause(0.8, 1.6)
+        _dismiss_consent(landed)
+        try:
+            landed = _enter(landed, query)
+        except RuntimeError:
+            if attempt == attempts - 1:
+                raise
+            continue
+        if _same_site(domain, landed.url):
+            return landed
+        humanize.pause(0.6, 1.2)
+    return landed
 
 ###############################################################################
 

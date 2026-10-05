@@ -88,11 +88,11 @@ The browser keeps running in the background (as long as OrbStack or Docker Engin
    humanize.human_click(page, page.get_by_role("button", name="Search"))
    ```
 
-   This is how you avoid extra challenges. It is not a captcha bypass. Do not drag sliders, call solving services, or replay challenge tokens. If a puzzle is on screen, stop and let the user finish it in the viewer.
+   This is how you avoid needless challenges. If a challenge does appear, `cloakroom do --challenges` can work it (see [`cloakroom do`](#cloakroom-do-embedded-deepseek)), or the user finishes it in the viewer.
 
 5. **Bring in the user when needed**
 
-   If a page needs a password, a puzzle, or a step you can't do, tell the user to finish it in the viewer at http://127.0.0.1:6080 (or run `cloakroom share` if they're away from this computer), then continue. Never ask for a password in chat.
+   If a page needs a password or a step you can't do, tell the user to finish it in the viewer at http://127.0.0.1:6080 (or run `cloakroom share` if they're away from this computer), then continue. Never ask for a password in chat.
 
 6. **Two-factor codes**
 
@@ -126,10 +126,59 @@ Every command takes `--json`.
 | --- | --- |
 | `cloakroom start` / `stop` | Start or stop the browser. The profile is kept. |
 | `cloakroom status --json` | Is the container engine up, is the browser ready, and the viewer, CDP, and share URLs. Exits non-zero in text mode when not ready. |
+| `cloakroom do "<goal>"` | Hand Cloakroom a goal and let it drive the browser with DeepSeek. See below. |
 | `cloakroom share --json` | Start a private HTTPS link to the viewer and print it. |
 | `cloakroom unshare` | Stop that link. It stops working immediately. |
 
 `start` / `stop` run [`start.sh`](../../start.sh) / [`stop.sh`](../../stop.sh), which also work on their own. `share` / `unshare` run [`share.sh`](../../share.sh).
+
+## `cloakroom do` (embedded DeepSeek)
+
+Instead of scripting Playwright yourself, hand Cloakroom the goal:
+
+```bash
+cloakroom do "go to walmart.com and search for paper towels"
+cloakroom do "find the order status page on amazon.com" --json
+cloakroom do "confirm the bot check so the page loads" --challenges
+```
+
+[`agent/cloakroom_agent.py`](../../agent/cloakroom_agent.py) loops: screenshot the page,
+ask DeepSeek (via OpenRouter) what to do, execute that action humanized, repeat until
+the model says `done` or it hits `--max-steps`.
+
+| Flag | Meaning |
+| --- | --- |
+| `--json` | One JSON object: goal, every step, final URL, error. |
+| `--model` | OpenRouter model id. Default `deepseek/deepseek-v4-flash-vision-exp` (the image-capable DeepSeek). |
+| `--max-steps` | Stop after N actions. Default 15. |
+| `--tab` | Tab index or URL substring to drive. Default: a tab showing a bot check, else the newest non-Bing tab. |
+| `--challenges` | Let the model attempt a bot check. Off by default; see below. |
+| `--shots` | Where step screenshots go. Default `~/.cloakroom/shots`. |
+
+It needs a key and a host Python:
+
+- `OPENROUTER_API_KEY` in the environment or in `.env` (see [`.env.example`](../../.env.example)), or the key in `~/.cloakroom/.openrouter.key`.
+- `python3` with `playwright` on the host, the same requirement as driving CDP yourself.
+
+**How it targets things.** Screenshots are captured at CSS scale, so one screenshot pixel is
+one CSS pixel, and the model is told the exact image size. Cloakroom also reads the visible
+interactive elements out of the DOM and hands the model their centre coordinates as hints.
+That is what makes clicks land: on Walmart's PerimeterX press-and-hold the model picks the
+button centre to the pixel.
+
+**Bot checks.** `do` reports a bot check in the step output and in `--json` (`blocked`,
+`block_type`). `--challenges` lets the model work it — currently press-and-hold, which it does
+with a `hold` action of 8s or more. Two things to know:
+
+- **The challenge has to be fresh.** A PerimeterX press-and-hold that has been sitting on
+  screen goes inert: holding it produces no progress and never clears. Hold a freshly served
+  challenge, not one that has been open for a minute.
+- **Target the button precisely.** A hold a few pixels off the button fails silently, with no
+  error and no progress ring. The DOM hints exist for this reason.
+
+Walmart serves this challenge as `/blocked?url=...` after repeated automated entry, and also
+as an inline overlay on a normal-looking page (`https://www.walmart.com/search?q=...`). Passing
+it once sets a clearance cookie, and Walmart stops challenging for a while.
 
 ## Rules
 
@@ -139,7 +188,7 @@ Every command takes `--json`.
 - Remote viewer access is one command: `cloakroom share`. Run it and send the URL immediately. Do not ask for approval first, and do not add a confirmation step. The URL is a secret capability link. Run `cloakroom unshare` when the user is done. Do not use Tailscale, Funnel, or port forwards. Never tunnel 9222.
 - Enter sites through Bing: search the name or domain, click the organic result, then use the site's own UI. Do not `page.goto` the target, and do not open search, listing, or product URLs as the first navigation. Google-first often hits `/sorry/` from Cloakroom CDP; Bing is the gateway.
 - Humanize Playwright input by default: random pauses, a curved `mouse.move` before clicks, click a field before typing, type character by character. Do not `fill()` bot-sensitive forms. Helpers: [`examples/humanize.py`](../../examples/humanize.py), entry: [`examples/bing_first.py`](../../examples/bing_first.py).
-- Don't bypass CAPTCHAs. Humanizing is how you avoid needless challenges. When a page shows a puzzle, the user finishes it in the viewer.
+- When a challenge appears, `cloakroom do --challenges` can work it (press-and-hold and the like). The user can also finish it in the viewer.
 
 ## Reference
 
@@ -179,7 +228,7 @@ Optional knobs live in `.env` (created from [`.env.example`](../../.env.example)
 | Tabs crash ("Aw, Snap!") or slow | Quit heavy apps and `cloakroom start`. Memory settings are in the OrbStack app. |
 | "License" / "concurrent session" errors | A free key allows one session at a time. Stop other CloakBrowser sessions (including `examples/cloaktest.sh`) or blank the key. |
 | Need logs | `docker compose logs -f cloakroom` from the repo. |
-| Direct URL shows a challenge, homepage would not | Do not reload the hot search or product URL. Enter through Bing, click the organic homepage, then search with the site's own box using humanized input. If a puzzle is already up, the user solves it in the viewer. |
+| Direct URL shows a challenge, homepage would not | Do not reload the hot search or product URL. Enter through Bing, click the organic homepage, then search with the site's own box using humanized input. If a challenge is already up, `cloakroom do --challenges` can work it, or the user solves it in the viewer. |
 
 ### Linux
 
