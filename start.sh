@@ -15,18 +15,7 @@ fail() {
 echo "${bold}Cloakroom${reset} - starting CloakBrowser"
 echo
 
-add_orbstack_path() {
-  case ":${PATH}:" in
-    *":${HOME}/.orbstack/bin:"*) ;;
-    *) export PATH="${HOME}/.orbstack/bin:${PATH}" ;;
-  esac
-}
-
-add_orbstack_path
-
-orbstack_app() {
-  [ -d /Applications/OrbStack.app ] || [ -d "${HOME}/Applications/OrbStack.app" ]
-}
+source ./lib.sh
 
 open_orbstack() {
   if [ -d /Applications/OrbStack.app ]; then
@@ -90,7 +79,7 @@ export_host_timezone() {
 }
 
 if orbstack_app; then
-  if ! docker --context orbstack info >/dev/null 2>&1; then
+  if ! docker info >/dev/null 2>&1; then
     echo "Starting OrbStack..."
     open_orbstack
     orb_bin=""
@@ -104,8 +93,7 @@ if orbstack_app; then
     fi
     ready=""
     for _ in $(seq 1 120); do
-      add_orbstack_path
-      if docker --context orbstack info >/dev/null 2>&1; then
+      if docker info >/dev/null 2>&1; then
         ready=yes
         break
       fi
@@ -117,7 +105,6 @@ Open OrbStack from Applications and finish its setup, then run this again.
   https://orbstack.dev/download"
     fi
   fi
-  docker context use orbstack >/dev/null
   echo "Using OrbStack."
 elif ! command -v docker >/dev/null 2>&1 || ! docker info >/dev/null 2>&1; then
   if [ "$(uname)" = "Darwin" ]; then
@@ -137,7 +124,7 @@ fi
 
 if ! docker compose version >/dev/null 2>&1; then
   if [ "$(uname)" = "Darwin" ]; then
-    fail "This container engine is missing 'docker compose'. Update OrbStack and run this again."
+    fail "This container engine is missing 'docker compose'. Update OrbStack or Docker Desktop (with Colima, set up Homebrew's docker-compose plugin), then run this again."
   fi
   fail "This container engine is missing 'docker compose'.
 Install the Docker Compose plugin and run this again.
@@ -156,10 +143,22 @@ docker compose pull hello --quiet
 docker compose build --pull --quiet cloakroom
 
 echo "2/3 Starting the browser..."
-docker compose up -d --force-recreate cloakroom
+if ! up_log="$(docker compose up -d --force-recreate cloakroom 2>&1)"; then
+  echo "$up_log"
+  case "$up_log" in
+    *"port is already allocated"*|*"address already in use"*|*"ports are not available"*)
+      fail "Another program on this computer is already using port ${CDP_PORT} or ${VIEWER_PORT}.
+Pick free ports in ${PWD}/.env, for example:
+  CLOAKROOM_CDP_PORT=9333
+  CLOAKROOM_VIEWER_PORT=6090
+then run: cloakroom start"
+      ;;
+  esac
+  fail "Docker could not start the browser. See the message above."
+fi
 
 echo "3/3 Waiting for the browser to be ready..."
-for _ in $(seq 1 90); do
+for _ in $(seq 1 150); do
   status="$(docker inspect -f '{{.State.Health.Status}}' cloakroom 2>/dev/null || echo missing)"
   [ "$status" = "healthy" ] && break
   sleep 2
@@ -179,8 +178,8 @@ ${green}${bold}You're ready!${reset}
 
   See the browser:    ${viewer_url}
   Agents and scripts: ${cdp_url}   (Playwright, Puppeteer, or open this folder in your agent)
-  Watch from a phone: ./cloakroom share
-  Stop everything:    ./cloakroom stop
+  Watch from a phone: cloakroom share
+  Stop everything:    cloakroom stop
 
   Only this computer can connect. Your logins are kept between restarts.
 

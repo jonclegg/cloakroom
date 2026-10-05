@@ -1,50 +1,121 @@
 #!/bin/sh
-# One-step install for Mac (OrbStack) or Linux (Docker Engine):
+# One-step install or update for macOS and Linux:
 #   curl -fsSL https://raw.githubusercontent.com/jonclegg/cloakroom/main/install.sh | sh # // pragma: allowlist secret
+#
+# POSIX sh (runs under dash, BusyBox ash, bash and zsh). Everything is inside main(), so a
+# partially downloaded script never runs. The app lives in ~/.cloakroom/app and is replaced
+# wholesale from a GitHub tarball on every run: local edits never block an update, and the
+# previous copy is kept in ~/.cloakroom/app.previous. Your .env settings carry over.
+#
+# Optional: CLOAKROOM_TARBALL_URL installs from another tarball (a fork, branch or tag).
 set -eu
 
-REPO_URL="https://github.com/jonclegg/cloakroom.git" # // pragma: allowlist secret
-TARBALL_URL="https://github.com/jonclegg/cloakroom/archive/refs/heads/main.tar.gz" # // pragma: allowlist secret
-INSTALL_DIR="${HOME}/.cloakroom/app"
+TARBALL_URL="${CLOAKROOM_TARBALL_URL:-https://github.com/jonclegg/cloakroom/archive/refs/heads/main.tar.gz}" # // pragma: allowlist secret
+STATE_DIR="${HOME:-}/.cloakroom"
+INSTALL_DIR="${STATE_DIR}/app"
 ORBSTACK_DOWNLOAD="https://orbstack.dev/download"
+ORBSTACK_MIN_MACOS=14
+DOCKER_DOCS="https://docs.docker.com/engine/install/"
 
 fail() {
   printf '\nProblem: %s\n\n' "$1" >&2
   exit 1
 }
 
+say() {
+  printf '%s\n' "$1"
+}
+
+need() {
+  command -v "$1" >/dev/null 2>&1 || fail "This installer needs '$1', which is not installed. $2"
+}
+
+preflight() {
+  [ -n "${HOME:-}" ] || fail "HOME is not set."
+  if [ "$(id -u)" = 0 ] && [ -n "${SUDO_USER:-}" ]; then
+    fail "Run the installer as yourself, not with sudo:
+  curl -fsSL https://raw.githubusercontent.com/jonclegg/cloakroom/main/install.sh | sh" # // pragma: allowlist secret
+  fi
+  need curl "Install curl, then run this again."
+  need tar "Install tar, then run this again."
+  need mktemp "Install coreutils, then run this again."
+}
+
+# ---------------------------------------------------------------- macOS
+
 orbstack_installed() {
-  [ -d /Applications/OrbStack.app ] || [ -d "${HOME}/Applications/OrbStack.app" ]
+  [ "$(uname -s)" = Darwin ] && { [ -d /Applications/OrbStack.app ] || [ -d "${HOME}/Applications/OrbStack.app" ]; }
 }
 
 have_brew() {
   if command -v brew >/dev/null 2>&1; then
     return 0
   fi
-  if [ -x /opt/homebrew/bin/brew ]; then
-    PATH="/opt/homebrew/bin:${PATH}"
-    export PATH
-    return 0
-  fi
-  if [ -x /usr/local/bin/brew ]; then
-    PATH="/usr/local/bin:${PATH}"
-    export PATH
-    return 0
-  fi
+  for prefix in /opt/homebrew /usr/local; do
+    if [ -x "${prefix}/bin/brew" ]; then
+      PATH="${prefix}/bin:${PATH}"
+      export PATH
+      return 0
+    fi
+  done
   return 1
 }
 
-ensure_orbstack() {
-  if orbstack_installed; then
-    echo "OrbStack is already installed."
-    return
-  fi
-  echo "Cloakroom runs its browser in OrbStack, not Docker Desktop."
-  if have_brew; then
-    echo "Installing OrbStack with Homebrew..."
-    brew install orbstack
+macos_major() {
+  sw_vers -productVersion | cut -d. -f1
+}
+
+# podman-docker answers to 'docker' but can't run Cloakroom's compose stack as-is.
+docker_is_podman() {
+  docker --version 2>/dev/null | grep -qi podman
+}
+
+# A Docker engine that already answers (Docker Desktop, Colima, Rancher Desktop...).
+docker_engine_running() {
+  command -v docker >/dev/null 2>&1 && ! docker_is_podman && docker info >/dev/null 2>&1
+}
+
+wait_for_orbstack_app() {
+  say "Waiting for OrbStack to appear in Applications..."
+  i=0
+  while [ "$i" -lt 180 ]; do
     if orbstack_installed; then
-      return
+      say "OrbStack found."
+      return 0
+    fi
+    i=$((i + 1))
+    sleep 2
+  done
+  fail "OrbStack was not found. Download it from ${ORBSTACK_DOWNLOAD}, open the app, then run this installer again."
+}
+
+ensure_mac_engine() {
+  if orbstack_installed; then
+    say "Container engine: OrbStack."
+    return 0
+  fi
+  if docker_engine_running; then
+    docker compose version >/dev/null 2>&1 || fail "Your Docker engine is running, but 'docker compose' is missing.
+Docker Desktop includes it (update Docker Desktop). With Homebrew's docker-compose, follow the
+'cliPluginsExtraDirs' note that 'brew info docker-compose' prints. Check with 'docker compose version',
+then run this installer again."
+    say "Container engine: the Docker engine already running on this Mac."
+    return 0
+  fi
+  major="$(macos_major)"
+  if [ "$major" -lt "$ORBSTACK_MIN_MACOS" ]; then
+    fail "This Mac runs macOS ${major}, and OrbStack needs macOS ${ORBSTACK_MIN_MACOS} or newer.
+Install a Docker engine that supports your macOS, start it, then run this installer again:
+  Colima (free):   brew install colima docker docker-compose && colima start
+  Docker Desktop:  https://docs.docker.com/desktop/setup/install/mac-install/
+Make sure 'docker info' and 'docker compose version' both work."
+  fi
+  say "Cloakroom runs its browser in a container. Installing OrbStack, a lightweight container engine for macOS."
+  if have_brew; then
+    say "Installing OrbStack with Homebrew..."
+    brew install --cask orbstack </dev/null
+    if orbstack_installed; then
+      return 0
     fi
   fi
   cat <<EOF
@@ -57,158 +128,179 @@ Install OrbStack in one step, then this installer continues:
   3. Open OrbStack and finish its setup (it may ask for your Mac password)
 
 EOF
-  if ! open "${ORBSTACK_DOWNLOAD}"; then
-    echo "Open this page in your browser: ${ORBSTACK_DOWNLOAD}"
-  fi
-  echo "Waiting for OrbStack to appear in Applications..."
-  i=0
-  while [ "$i" -lt 180 ]; do
-    if orbstack_installed; then
-      echo "OrbStack found."
-      return
-    fi
-    i=$((i + 1))
-    sleep 2
-  done
-  fail "OrbStack was not found. Download it from ${ORBSTACK_DOWNLOAD}, open the app, then run this installer again."
+  open "${ORBSTACK_DOWNLOAD}" 2>/dev/null || say "Open this page in your browser: ${ORBSTACK_DOWNLOAD}"
+  wait_for_orbstack_app
 }
 
-checkout_dir() {
-  script_path="$0"
-  case "$script_path" in
-    /*) ;;
-    *) script_path="$(pwd)/${script_path}" ;;
-  esac
-  if [ ! -f "$script_path" ]; then
-    return 1
-  fi
-  dir="$(cd "$(dirname "$script_path")" && pwd)"
-  if [ -f "${dir}/cloakroom" ] && [ -f "${dir}/docker-compose.yml" ]; then
-    printf '%s\n' "$dir"
-    return 0
-  fi
-  return 1
-}
+# ---------------------------------------------------------------- Linux
 
-install_tree() {
-  found="$(checkout_dir || true)"
-  if [ -n "$found" ]; then
-    INSTALL_DIR="$found"
-    echo "Using Cloakroom at ${INSTALL_DIR}"
-    return
-  fi
-  mkdir -p "${HOME}/.cloakroom"
-  if [ -d "${INSTALL_DIR}/.git" ]; then
-    echo "Updating Cloakroom..."
-    git -C "${INSTALL_DIR}" pull --ff-only origin main
-    return
-  fi
-  if [ -d "${INSTALL_DIR}" ]; then
-    rm -rf "${INSTALL_DIR}"
-  fi
-  echo "Downloading Cloakroom..."
-  if command -v git >/dev/null 2>&1; then
-    git clone --depth 1 --branch main "${REPO_URL}" "${INSTALL_DIR}"
-    return
-  fi
-  tmp="$(mktemp -d)"
-  curl -fsSL -o "${tmp}/cloakroom.tar.gz" "${TARBALL_URL}"
-  tar -xzf "${tmp}/cloakroom.tar.gz" -C "${tmp}"
-  mv "${tmp}/cloakroom-main" "${INSTALL_DIR}"
-  rm -rf "${tmp}"
-}
-
-host_arch_name() {
-  case "$(uname -s):$(uname -m)" in
-    Darwin:arm64) printf '%s\n' darwin-arm64 ;;
-    Darwin:x86_64) printf '%s\n' darwin-amd64 ;;
-    Linux:x86_64|Linux:amd64) printf '%s\n' linux-amd64 ;;
-    Linux:aarch64|Linux:arm64) printf '%s\n' linux-arm64 ;;
+linux_arch_ok() {
+  case "$(uname -m)" in
+    x86_64|amd64|aarch64|arm64) return 0 ;;
     *) return 1 ;;
   esac
 }
 
-cloudflared_asset() {
-  name="$(host_arch_name)" || fail "No cloudflared build for $(uname -s) $(uname -m). Download one from https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/downloads/"
-  case "$name" in
-    darwin-*) printf '%s\n' "cloudflared-${name}.tgz" ;;
-    *) printf '%s\n' "cloudflared-${name}" ;;
-  esac
-}
-
-install_cloudflared_binary() {
-  asset="$(cloudflared_asset)"
-  url="https://github.com/cloudflare/cloudflared/releases/latest/download/${asset}"
-  dest_dir="${HOME}/.local/bin"
-  tmp="$(mktemp -d)"
-  echo "Downloading cloudflared from Cloudflare..."
-  echo "  ${url}"
-  echo "  Docs: https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/downloads/"
-  mkdir -p "${dest_dir}"
-  case "$asset" in
-    *.tgz)
-      curl -fsSL --connect-timeout 30 --max-time 300 -o "${tmp}/cloudflared.tgz" "${url}"
-      tar -xzf "${tmp}/cloudflared.tgz" -C "${tmp}"
-      mv "${tmp}/cloudflared" "${dest_dir}/cloudflared"
-      ;;
-    *)
-      curl -fsSL --connect-timeout 30 --max-time 300 -o "${dest_dir}/cloudflared" "${url}"
-      ;;
-  esac
-  chmod +x "${dest_dir}/cloudflared"
-  rm -rf "${tmp}"
-  PATH="${dest_dir}:${PATH}"
-  export PATH
-  echo "Installed cloudflared to ${dest_dir}/cloudflared"
-}
-
 ensure_linux_docker() {
-  if ! command -v timeout >/dev/null 2>&1; then
-    fail "The 'timeout' command is missing, so this installer will not run 'docker info'.
-A stuck Docker socket would hang the install. Install coreutils (it provides timeout), then run this installer again."
+  linux_arch_ok || fail "Cloakroom on Linux supports amd64 (x86_64) and arm64 (aarch64). This machine is $(uname -m)."
+  need bash "Cloakroom's commands are bash scripts. Install bash (for example 'sudo apk add bash' on Alpine), then run this again."
+  if ! command -v docker >/dev/null 2>&1; then
+    fail "Docker Engine is not installed.
+Install it with Docker's script (or see ${DOCKER_DOCS}):
+  curl -fsSL https://get.docker.com | sudo sh
+  sudo usermod -aG docker \"\$USER\"
+(Alpine: sudo apk add docker docker-cli-compose && sudo rc-update add docker && sudo service docker start
+ && sudo addgroup \"\$USER\" docker)
+Then log out and back in (so the docker group applies) and run this installer again."
   fi
-  if ! command -v docker >/dev/null 2>&1 || ! timeout 30 docker info >/dev/null 2>&1; then
-    fail "Docker Engine is not available.
-Install Docker Engine, then make sure 'docker info' works for this user:
-  https://docs.docker.com/engine/install/
-If Docker is installed but 'docker info' fails, start it and join the docker group, then log in again:
-  sudo systemctl enable --now docker
-  sudo usermod -aG docker \"\$USER\""
+  if docker_is_podman; then
+    fail "The 'docker' command here is Podman's Docker emulation (podman-docker), and Cloakroom needs Docker Engine.
+Replace it with Docker Engine, then run this installer again:
+  sudo dnf remove podman-docker      (or: sudo apt-get remove podman-docker)
+  curl -fsSL https://get.docker.com | sudo sh
+  sudo usermod -aG docker \"\$USER\"   then log out and back in"
+  fi
+  if command -v timeout >/dev/null 2>&1; then
+    info="$(timeout 30 docker info 2>&1)" && status=0 || status=$?
+  else
+    info="$(docker info 2>&1)" && status=0 || status=$?
+  fi
+  if [ "$status" -ne 0 ]; then
+    case "$info" in
+      *"permission denied"*)
+        fail "Docker is installed, but this user can't use it (permission denied on the Docker socket).
+Add yourself to the docker group, then log out and back in:
+  sudo usermod -aG docker \"\$USER\"      (Alpine: sudo addgroup \"\$USER\" docker)
+Check with 'docker info', then run this installer again."
+        ;;
+      *"Cannot connect"*|*"Is the docker daemon running"*|*"No such file"*)
+        fail "Docker is installed, but its daemon isn't running.
+Start it (and enable it at boot), then run this installer again:
+  sudo systemctl enable --now docker"
+        ;;
+      *)
+        if [ "$status" -eq 124 ]; then
+          fail "'docker info' did not answer within 30 seconds. Restart Docker (sudo systemctl restart docker), then run this installer again."
+        fi
+        fail "'docker info' failed:
+${info}
+Fix Docker so 'docker info' works for this user, then run this installer again."
+        ;;
+    esac
   fi
   if ! docker compose version >/dev/null 2>&1; then
     fail "Docker is running, but the 'docker compose' plugin is missing.
-Install the Compose plugin, then run this installer again:
-  https://docs.docker.com/compose/install/linux/
-On Debian or Ubuntu:
-  sudo apt-get update && sudo apt-get install docker-compose-plugin"
+Install it, then run this installer again:
+  Debian/Ubuntu (Docker's packages):  sudo apt-get install docker-compose-plugin
+  Debian/Ubuntu (distro packages):    sudo apt-get install docker-compose-v2
+  Fedora/RHEL:                        sudo dnf install docker-compose-plugin
+  Other:                              https://docs.docker.com/compose/install/linux/"
   fi
-  echo "Docker Engine is running."
+  say "Container engine: Docker Engine."
+}
+
+# ---------------------------------------------------------------- cloudflared (for cloakroom share)
+
+cloudflared_asset() {
+  case "$(uname -s):$(uname -m)" in
+    Darwin:arm64) say cloudflared-darwin-arm64.tgz ;;
+    Darwin:x86_64) say cloudflared-darwin-amd64.tgz ;;
+    Linux:x86_64|Linux:amd64) say cloudflared-linux-amd64 ;;
+    Linux:aarch64|Linux:arm64) say cloudflared-linux-arm64 ;;
+    *) fail "No cloudflared build for $(uname -s) $(uname -m)." ;;
+  esac
 }
 
 ensure_cloudflared() {
+  dest_dir="${HOME}/.local/bin"
+  case ":${PATH}:" in
+    *":${dest_dir}:"*) ;;
+    *) PATH="${dest_dir}:${PATH}"; export PATH ;;
+  esac
   if command -v cloudflared >/dev/null 2>&1; then
-    echo "cloudflared is already installed."
-    return
+    say "cloudflared is installed."
+    return 0
   fi
-  if have_brew; then
-    echo "Installing cloudflared with Homebrew..."
-    if brew install cloudflared && command -v cloudflared >/dev/null 2>&1; then
-      echo "cloudflared is installed."
-      return
-    fi
-    echo "Homebrew did not provide cloudflared. Downloading the official binary."
-  fi
-  install_cloudflared_binary
-}
-
-ensure_path_line() {
-  line='export PATH="$HOME/.local/bin:$PATH"'
-  rc="$1"
-  case "$rc" in
-    "${HOME}/.bash_profile")
-      [ -f "$rc" ] || return 0
+  asset="$(cloudflared_asset)"
+  url="https://github.com/cloudflare/cloudflared/releases/latest/download/${asset}"
+  say "Downloading cloudflared (used by 'cloakroom share')..."
+  mkdir -p "$dest_dir"
+  tmp="$(mktemp -d)"
+  case "$asset" in
+    *.tgz)
+      curl -fsSL --retry 3 --connect-timeout 30 --max-time 300 -o "${tmp}/cloudflared.tgz" "$url"
+      tar -xzf "${tmp}/cloudflared.tgz" -C "$tmp"
+      mv "${tmp}/cloudflared" "${dest_dir}/cloudflared"
+      ;;
+    *)
+      curl -fsSL --retry 3 --connect-timeout 30 --max-time 300 -o "${tmp}/cloudflared" "$url"
+      mv "${tmp}/cloudflared" "${dest_dir}/cloudflared"
       ;;
   esac
+  rm -rf "$tmp"
+  chmod +x "${dest_dir}/cloudflared"
+  say "Installed cloudflared to ${dest_dir}/cloudflared"
+}
+
+# ---------------------------------------------------------------- the app
+
+# Run as ./install.sh from a clone: use that clone in place (for development).
+checkout_dir() {
+  case "$0" in
+    *install.sh) ;;
+    *) return 1 ;;
+  esac
+  [ -f "$0" ] || return 1
+  dir="$(cd "$(dirname "$0")" && pwd)"
+  [ -f "${dir}/cloakroom" ] && [ -f "${dir}/docker-compose.yml" ] || return 1
+  say "$dir"
+}
+
+install_app() {
+  found="$(checkout_dir || true)"
+  if [ -n "$found" ]; then
+    INSTALL_DIR="$found"
+    say "Using the Cloakroom clone at ${INSTALL_DIR}"
+    return 0
+  fi
+  mkdir -p "$STATE_DIR"
+  rm -rf "${STATE_DIR}"/.download.*            # leftovers from an interrupted run
+  # Stage inside STATE_DIR so the final swap is a same-filesystem rename.
+  stage="$(mktemp -d "${STATE_DIR}/.download.XXXXXX")"
+  say "Downloading Cloakroom..."
+  curl -fsSL --retry 3 --connect-timeout 30 --max-time 600 -o "${stage}/app.tar.gz" "$TARBALL_URL"
+  mkdir "${stage}/x"
+  tar -xzf "${stage}/app.tar.gz" -C "${stage}/x"
+  new=""
+  for d in "${stage}"/x/*; do
+    if [ -f "${d}/cloakroom" ] && [ -f "${d}/docker-compose.yml" ]; then
+      new="$d"
+    fi
+  done
+  if [ -z "$new" ]; then
+    rm -rf "$stage"
+    fail "The download from ${TARBALL_URL} doesn't look like Cloakroom."
+  fi
+  if [ -f "${INSTALL_DIR}/.env" ]; then
+    cp -p "${INSTALL_DIR}/.env" "${new}/.env"
+  fi
+  if [ -e "$INSTALL_DIR" ]; then
+    rm -rf "${STATE_DIR}/app.previous"
+    mv "$INSTALL_DIR" "${STATE_DIR}/app.previous"
+    mv "$new" "$INSTALL_DIR"
+    say "Updated Cloakroom. The previous copy is in ${STATE_DIR}/app.previous"
+  else
+    mv "$new" "$INSTALL_DIR"
+    say "Installed Cloakroom in ${INSTALL_DIR}"
+  fi
+  rm -rf "$stage"
+  chmod +x "${INSTALL_DIR}/cloakroom" "${INSTALL_DIR}"/*.sh
+}
+
+add_path_line() {
+  rc="$1"
+  # shellcheck disable=SC2016  # the line is written literally into the rc file
+  line='export PATH="$HOME/.local/bin:$PATH"'
   if [ -f "$rc" ] && grep -qxF "$line" "$rc"; then
     return 0
   fi
@@ -217,45 +309,36 @@ ensure_path_line() {
 
 link_cli() {
   target="${INSTALL_DIR}/cloakroom"
-  chmod +x "${target}" "${INSTALL_DIR}/start.sh" "${INSTALL_DIR}/stop.sh" "${INSTALL_DIR}/share.sh" "${INSTALL_DIR}/install.sh"
-  if ln -sf "${target}" /usr/local/bin/cloakroom 2>/dev/null; then
-    echo "Installed cloakroom. Open a terminal and run: cloakroom"
-    return
+  if [ -d /usr/local/bin ] && [ -w /usr/local/bin ]; then
+    ln -sf "$target" /usr/local/bin/cloakroom
+    say "Installed the cloakroom command in /usr/local/bin."
+    return 0
   fi
   mkdir -p "${HOME}/.local/bin"
-  ln -sf "${target}" "${HOME}/.local/bin/cloakroom"
-  if [ "$(uname -s)" = "Darwin" ]; then
-    ensure_path_line "${HOME}/.zprofile"
-    ensure_path_line "${HOME}/.zshrc"
-  else
-    ensure_path_line "${HOME}/.bashrc"
-    ensure_path_line "${HOME}/.profile"
-    ensure_path_line "${HOME}/.bash_profile"
-    ensure_path_line "${HOME}/.zshrc"
-    ensure_path_line "${HOME}/.zprofile"
+  ln -sf "$target" "${HOME}/.local/bin/cloakroom"
+  # Login and interactive shells for zsh and bash. Fish users add ~/.local/bin themselves.
+  add_path_line "${HOME}/.profile"
+  add_path_line "${HOME}/.zprofile"
+  add_path_line "${HOME}/.zshrc"
+  add_path_line "${HOME}/.bashrc"
+  if [ -f "${HOME}/.bash_profile" ]; then
+    add_path_line "${HOME}/.bash_profile"
   fi
-  export PATH="${HOME}/.local/bin:${PATH}"
-  echo "Installed cloakroom to ${HOME}/.local/bin/cloakroom"
-  if [ "$(uname -s)" = "Linux" ]; then
-    echo "Open a new terminal so PATH includes ~/.local/bin."
-  fi
+  say "Installed the cloakroom command in ${HOME}/.local/bin (new terminals pick it up)."
 }
 
-case "$(uname -s)" in
-  Darwin)
-    ensure_orbstack
-    ;;
-  Linux)
-    host_arch_name >/dev/null || fail "Cloakroom on Linux supports amd64 (x86_64) and arm64 (aarch64). This machine is $(uname -m)."
-    ensure_linux_docker
-    ;;
-  *)
-    fail "This installer supports macOS and Linux. On Windows, use start.ps1 (see skills/cloakroom/SKILL.md > Windows)."
-    ;;
-esac
+main() {
+  preflight
+  case "$(uname -s)" in
+    Darwin) ensure_mac_engine ;;
+    Linux) ensure_linux_docker ;;
+    *) fail "This installer is for macOS and Linux. On Windows, see https://github.com/jonclegg/cloakroom#quickstart" ;; # // pragma: allowlist secret
+  esac
+  ensure_cloudflared
+  install_app
+  link_cli
+  say "Starting Cloakroom..."
+  "${INSTALL_DIR}/cloakroom" start </dev/null
+}
 
-ensure_cloudflared
-install_tree
-link_cli
-echo "Starting Cloakroom..."
-"${INSTALL_DIR}/cloakroom" start
+main "$@"
