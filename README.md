@@ -1,15 +1,12 @@
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/brand/cloakroom-logo-dark.svg">
-    <img alt="Cloakroom" src="docs/brand/cloakroom-logo.svg" width="380">
-  </picture>
+  <img alt="Cloakroom" src="docs/brand/cloak-logo.png" width="220">
 </p>
 
 **A stealth browser for AI agents: fewer bot walls, and logins that stick.**
 
-[![Watch the explainer (1:28)](docs/media/cloakroom-explainer-thumb.png)](docs/media/cloakroom-explainer.mp4)
+[![Watch the video (0:27)](docs/media/cloakroom-promo-poster.jpg)](docs/media/cloakroom-promo.mp4)
 
-Watch the [explainer video](docs/media/cloakroom-explainer.mp4) (1:28), or see the [project page](https://jonclegg.github.io/cloakroom/). <!-- pragma: allowlist secret -->
+Watch the [video](docs/media/cloakroom-promo.mp4) (0:27), or see the [project page](https://jonclegg.github.io/cloakroom/). <!-- pragma: allowlist secret -->
 
 ## Quickstart
 
