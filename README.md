@@ -31,7 +31,7 @@ Cloud agents browse from datacenter servers. Big sites see a datacenter IP and a
 
 Cloakroom brings the browser home. It runs [CloakBrowser](https://github.com/CloakHQ/CloakBrowser), a stealth build of Chromium, on your Mac (OrbStack) or a Linux computer (Docker Engine) with one saved profile. Your agent drives it over CDP from wherever it runs.
 
-How the agent drives it matters too. It enters each site from a Bing search result, moves the mouse and types like a person, and searches with the site's own search box. Starting at Google, or jumping straight to a hot search URL, is what tends to bring up a puzzle. Humanized input avoids needless challenges. It doesn't solve them: when a puzzle shows up, you finish it in the viewer.
+How the agent drives it matters too. It enters each site from a Bing search result, moves the mouse and types like a person, and searches with the site's own search box. Starting at Google, or jumping straight to a hot search URL, is what tends to bring up a puzzle. Humanized input avoids needless challenges, and when one shows up anyway, `cloakroom do` works it — including press-and-hold.
 
 ## What you get
 
@@ -57,7 +57,7 @@ Because the profile keeps its cookies, most sites ask for a code only on the fir
 
 ## Good to know
 
-- No guarantees. Some sites will still block you, and Cloakroom doesn't solve CAPTCHAs.
+- No guarantees. Some sites will still block you.
 - Your IP still matters. Traffic leaves from this computer's connection, or from a proxy you set.
 - Only this computer can reach the browser. `cloakroom share` is the one way in from elsewhere, and it exposes only the viewer. Anyone with that link can control your logged-in browser, so keep it private and run `cloakroom unshare` when you're done.
 - The full reference for agents (and the curious) is in [AGENTS.md](AGENTS.md) and [the agent guide](skills/cloakroom/SKILL.md).

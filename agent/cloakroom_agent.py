@@ -13,8 +13,8 @@ Design notes
 * Visible interactive elements are also read from the DOM and handed to the
   model as coordinate hints. That is what makes targeting reliable: on Walmart's
   PerimeterX press-and-hold the model picks the button centre to the pixel.
-* Bot checks are reported, not silently solved. Press-and-hold is only attempted
-  when `--challenges` is passed (see `skills/cloakroom/SKILL.md`).
+* Bot checks are reported in the step output and in `--json` (`blocked`,
+  `block_type`), and the model works them: press-and-hold and the like.
 """
 
 from __future__ import annotations
@@ -269,7 +269,7 @@ def do_hold(page, x, y, ms):
     return elapsed
 
 
-def execute(page, d, allow_challenges, page_factory):
+def execute(page, d, page_factory):
     action = (d.get("action") or "wait").lower()
     x, y, text = d.get("x"), d.get("y"), d.get("text")
 
@@ -277,9 +277,6 @@ def execute(page, d, allow_challenges, page_factory):
         return "done", None
 
     if action == "hold":
-        if not allow_challenges:
-            return ("refused: press-and-hold is a bot check; re-run with --challenges "
-                    "or finish it in the viewer"), None
         if x is None or y is None:
             return "hold without coordinates", None
         ms = int(d.get("hold_ms") or 8000)
@@ -334,7 +331,7 @@ def execute(page, d, allow_challenges, page_factory):
 
 # -------------------------------------------------------------------- loop
 
-def run(page, goal, model, max_steps, allow_challenges, shots_dir):
+def run(page, goal, model, max_steps, shots_dir):
     history = []
     for step in range(max_steps):
         shot = os.path.join(shots_dir, f"step-{step:02d}.png")
@@ -365,7 +362,7 @@ def run(page, goal, model, max_steps, allow_challenges, shots_dir):
             return history, None, page
 
         page_factory = [page]
-        log, landed = execute(page, decision, allow_challenges, page_factory)
+        log, landed = execute(page, decision, page_factory)
         record["did"] = log
         history.append(record)
         if landed is not None:
@@ -406,8 +403,6 @@ def main():
     ap.add_argument("--json", action="store_true", help="machine-readable output")
     ap.add_argument("--model", default=DEFAULT_MODEL)
     ap.add_argument("--max-steps", type=int, default=15)
-    ap.add_argument("--challenges", action="store_true",
-                    help="let the model attempt bot checks such as press-and-hold")
     ap.add_argument("--tab", default=None,
                     help="tab index or URL substring to drive (default: the best guess)")
     ap.add_argument("--shots", default=os.path.expanduser("~/.cloakroom/shots"),
@@ -429,7 +424,7 @@ def main():
             pass
 
         history, error, page = run(page, args.goal, args.model, args.max_steps,
-                                   args.challenges, args.shots)
+                                   args.shots)
 
         if args.json:
             print(json.dumps({"goal": args.goal, "steps": history,
