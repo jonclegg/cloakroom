@@ -439,6 +439,8 @@ def execute(page, d, page_factory):
 
 def run(page, goal, model, max_steps, shots_dir):
     history = []
+    # Playwright's screenshot creates the folder; the raw-CDP fallback does not
+    os.makedirs(shots_dir, exist_ok=True)
     humanize.reset_zoom(page)
     for step in range(max_steps):
         shot = os.path.join(shots_dir, f"step-{step:02d}.png")
