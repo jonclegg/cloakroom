@@ -1,8 +1,5 @@
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/brand/cloak-logo.png">
-    <img alt="Cloakroom" src="docs/brand/cloak-logo-light.png" width="200">
-  </picture>
+  <img alt="Cloakroom" src="docs/brand/cloak-logo-readme.png" width="200">
 </p>
 
 <h3 align="center">A browser for your AI agent that big websites don't block, and that stays logged in.</h3>

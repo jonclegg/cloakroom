@@ -18,6 +18,14 @@ on:
       - "examples/humanize.py"
       - "examples/bing_first.py"
       - ".github/workflows/image.yml"
+      # Installer changes go through here too: the Linux install test runs
+      # once this workflow has published the commit's image.
+      - "install.sh"
+      - "start.sh"
+      - "cloakroom"
+      - "lib.sh"
+      - "docker-compose.yml"
+      - ".github/workflows/installers.yml"
   workflow_dispatch:
 
 permissions:
