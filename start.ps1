@@ -19,9 +19,12 @@ if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
     Fail "Docker is not installed.`nInstall Docker Desktop for Windows (it needs WSL 2), open it once, then run .\start.ps1 again:`n  https://www.docker.com/products/docker-desktop/"
 }
 
-docker info *> $null
+$osType = (docker info --format "{{.OSType}}" 2>$null)
 if ($LASTEXITCODE -ne 0) {
     Fail "Docker Desktop is not running.`nOpen Docker Desktop from the Start menu, wait until it says `"Engine running`", then run .\start.ps1 again."
+}
+if ($osType -ne "linux") {
+    Fail "Docker is set to Windows containers, and Cloakroom needs Linux containers.`nRight-click the Docker icon in the taskbar, choose 'Switch to Linux containers...', then run .\start.ps1 again."
 }
 
 docker compose version *> $null
@@ -43,7 +46,7 @@ Invoke-Docker compose up -d --force-recreate cloakroom
 
 Write-Host "3/3 Waiting for the browser to be ready..."
 $status = "missing"
-for ($i = 0; $i -lt 90; $i++) {
+for ($i = 0; $i -lt 150; $i++) {
     $status = (docker inspect -f "{{.State.Health.Status}}" cloakroom 2>$null)
     if ($status -eq "healthy") { break }
     Start-Sleep -Seconds 2

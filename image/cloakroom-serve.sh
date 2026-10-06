@@ -6,6 +6,19 @@ DATA_DIR=/tmp/cloakserve
 PROFILE_DIR=/profile/default
 PROFILE_KEY="${CLOAKROOM_FINGERPRINT_SEED:-__default__}"
 
+apply_container_timezone() {
+  [ -n "${TZ:-}" ] || return 0
+  zone="/usr/share/zoneinfo/${TZ}"
+  if [ ! -e "$zone" ]; then
+    echo "Timezone ${TZ} is not installed (${zone})." >&2
+    exit 1
+  fi
+  ln -snf "$zone" /etc/localtime
+  printf '%s\n' "$TZ" > /etc/timezone
+}
+
+apply_container_timezone
+
 mkdir -p "$DATA_DIR" "$PROFILE_DIR"
 rm -f "$PROFILE_DIR"/SingletonLock "$PROFILE_DIR"/SingletonSocket "$PROFILE_DIR"/SingletonCookie
 
@@ -23,12 +36,6 @@ python -u /opt/cloakroom/agent/server.py &
 args=(--start-maximized --data-dir="$DATA_DIR")
 if [ -n "${CLOAKROOM_FINGERPRINT_SEED:-}" ]; then
   args+=(--fingerprint="$CLOAKROOM_FINGERPRINT_SEED")
-fi
-# Without this the browser reports UTC. A UTC clock next to a US residential IP is
-# a classic automation tell, and cloakserve only derives a timezone from GeoIP when
-# a proxy is set. Match the host instead.
-if [ -n "${CLOAKROOM_TIMEZONE:-}" ]; then
-  args+=(--fingerprint-timezone="$CLOAKROOM_TIMEZONE")
 fi
 if [ -n "${CLOAKROOM_PROXY:-}" ]; then
   args+=(--proxy-server="$CLOAKROOM_PROXY")

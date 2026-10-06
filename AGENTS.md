@@ -26,6 +26,8 @@ Never ask the user for their password in chat. They type it in the viewer (http:
 
 The same goes for the OpenRouter key that `cloakroom chat` needs. If `cloakroom status --json` shows `"openrouter_key": false`, run `cloakroom key --json` and send the user the `setup_url`; they paste the key into that local page. If they are away from the machine, run `cloakroom key --in-browser` and `cloakroom share`, and they paste it in the viewer. See [`skills/cloakroom/SKILL.md`](skills/cloakroom/SKILL.md#the-openrouter-key).
 
+The browser inherits the host timezone via `TZ` when `cloakroom start` can detect it, otherwise `America/Chicago`. Override with `TZ=...` in `.env`.
+
 ## Linux
 
 Docker Engine and the `docker compose` plugin, on amd64 or arm64. `docker info` must succeed for this user (start the service, and add the user to the `docker` group if permission is denied).

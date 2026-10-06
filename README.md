@@ -1,29 +1,35 @@
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/brand/cloakroom-logo-dark.svg">
-    <img alt="Cloakroom" src="docs/brand/cloakroom-logo.svg" width="380">
-  </picture>
+  <img alt="Cloakroom" src="docs/brand/cloak-logo.png" width="220">
 </p>
 
 **A stealth browser for AI agents: fewer bot walls, and logins that stick.**
 
-[![Watch the explainer (1:28)](docs/media/cloakroom-explainer-thumb.png)](docs/media/cloakroom-explainer.mp4)
+[![Watch the video (0:27)](docs/media/cloakroom-promo-poster.jpg)](docs/media/cloakroom-promo.mp4)
 
-Watch the [explainer video](docs/media/cloakroom-explainer.mp4) (1:28), or see the [project page](https://jonclegg.github.io/cloakroom/). <!-- pragma: allowlist secret -->
+Watch the [video](docs/media/cloakroom-promo.mp4) (0:27), or see the [project page](https://jonclegg.github.io/cloakroom/). <!-- pragma: allowlist secret -->
 
 ## Quickstart
 
-On a Mac or a Linux machine, tell your agent (Grok Bot, Muse, Cursor, Claude Code, Codex) to install Cloakroom:
+Tell your agent (Grok Bot, Muse, Cursor, Claude Code, Codex) to install Cloakroom, or run it yourself.
+
+macOS or Linux:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/jonclegg/cloakroom/main/install.sh | sh # // pragma: allowlist secret
 ```
 
-- **Mac:** the installer sets up OrbStack. Apple Silicon runs natively.
-- **Linux (amd64 or arm64):** install [Docker Engine](https://docs.docker.com/engine/install/) and the Compose plugin first, and make sure `docker info` works. The installer does not install Docker.
-- **Windows:** clone the repo and run `start.ps1`. See [the agent guide](skills/cloakroom/SKILL.md).
+Windows (PowerShell):
 
-Or just hand it this repo's URL. Your agent reads the instructions here and handles the rest.
+```powershell
+irm https://raw.githubusercontent.com/jonclegg/cloakroom/main/install.ps1 | iex # // pragma: allowlist secret
+```
+
+- **Mac:** uses OrbStack, or a Docker engine you already run (Docker Desktop, Colima). With neither, it installs OrbStack (macOS 14+). Apple Silicon and Intel.
+- **Linux (amd64 or arm64):** needs [Docker Engine](https://docs.docker.com/engine/install/) and the Compose plugin working for your user. If anything's missing, the installer says exactly what and how to fix it.
+- **Windows:** needs [Docker Desktop](https://docs.docker.com/desktop/setup/install/windows-install/) running Linux containers (WSL 2).
+- **Updating:** run the same command again. Your settings in `.env` are kept, and the previous copy is saved in `~/.cloakroom/app.previous`.
+
+Or just hand your agent this repo's URL. It reads the instructions here and handles the rest.
 
 ## Why Cloakroom
 

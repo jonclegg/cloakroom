@@ -10,14 +10,13 @@ Thumbs.db
 .vscode/
 *.swp
 
-# Node (docs/media/explainer renderer)
-node_modules/
-
 # Python
 __pycache__/
 *.pyc
 .venv/
 venv/
+
+.claude/worktrees/
 
 # Cursor worktrees / uploads
 .cursor/

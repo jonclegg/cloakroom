@@ -29,7 +29,7 @@ The browser keeps running in the background (as long as OrbStack or Docker Engin
 
    | Field | Value | What you do |
    | --- | --- | --- |
-   | `docker_running` | `false` | Run `cloakroom start`. On a Mac that opens OrbStack (not Docker Desktop). If OrbStack is missing, the user installs it from https://orbstack.dev/download. On Linux, Docker Engine must already be installed and `docker info` must succeed. |
+   | `docker_running` | `false` | Run `cloakroom start`. On a Mac with OrbStack that opens OrbStack; otherwise it uses the running Docker engine (Docker Desktop, Colima). If there's no engine at all, re-run the installer: it says exactly what to install. On Linux, Docker Engine must already be installed and `docker info` must succeed. |
    | `ready` | `false` | Run `cloakroom start` (first run downloads ~1 GB; allow up to 10 minutes). |
    | `openrouter_key` | `false` | Needed only for `cloakroom chat`. Run `cloakroom key --json` and send the user the `setup_url`; they paste the key into that page. See [The OpenRouter key](#the-openrouter-key). Never ask for the key in chat. |
 
@@ -260,14 +260,18 @@ it once sets a clearance cookie, and Walmart stops challenging for a while.
 
 ### Install
 
-`install.sh` supports Mac and Linux. It downloads Cloakroom to `~/.cloakroom/app`, links `cloakroom` onto the PATH, installs `cloudflared`, and runs `cloakroom start`.
+`install.sh` (macOS, Linux) and `install.ps1` (Windows) install and update the same way. Run them again any time to update.
 
-- **Mac:** installs OrbStack with Homebrew (or opens https://orbstack.dev/download and waits for it in Applications). `cloudflared` comes from Homebrew, else the official Darwin tarball into `~/.local/bin`. Apple Silicon runs natively. PATH is added to `~/.zprofile` and `~/.zshrc`.
-- **Linux (amd64 or arm64):** requires Docker Engine and `docker compose` already working (`docker info`). It does not install Docker or OrbStack. `cloudflared` is the official GitHub binary (`cloudflared-linux-amd64` or `cloudflared-linux-arm64`) into `~/.local/bin`. PATH is added to bash and zsh profiles.
+- The app is downloaded as a GitHub tarball (zip on Windows) into `~/.cloakroom/app` and replaced wholesale on every run, so local edits never block an update. `.env` carries over; the previous copy is kept in `~/.cloakroom/app.previous`. No git needed. Don't edit files in `~/.cloakroom/app`; put settings in `.env`.
+- `install.sh` is POSIX `sh` (dash, BusyBox ash, bash, zsh) and refuses to run under `sudo`. It installs `cloudflared` (official binary) into `~/.local/bin`, links `cloakroom` into `/usr/local/bin` when writable or `~/.local/bin` (added to `~/.profile`, `~/.zprofile`, `~/.zshrc`, `~/.bashrc`), then runs `cloakroom start`.
+- **Mac:** uses OrbStack if it's installed, else a Docker engine that's already running (Docker Desktop, Colima). With neither, it installs OrbStack on macOS 14+ (Homebrew, or opens https://orbstack.dev/download and waits); on older macOS it explains how to install Colima or Docker Desktop. Cloakroom selects OrbStack per command (`DOCKER_CONTEXT`) and never changes your default Docker context.
+- **Linux (amd64 or arm64):** needs Docker Engine and the Compose plugin working for your user. It does not install Docker; it tells you exactly what's wrong (not installed, daemon stopped, not in the `docker` group, Compose missing, bash missing on Alpine) and the command that fixes it.
+- **Windows:** `irm https://raw.githubusercontent.com/jonclegg/cloakroom/main/install.ps1 | iex` in PowerShell. Needs Docker Desktop running Linux containers (WSL 2). Works in Windows PowerShell 5.1 and PowerShell 7. <!-- pragma: allowlist secret -->
+- `CLOAKROOM_TARBALL_URL` (`CLOAKROOM_ZIP_URL` on Windows) installs from another archive, such as a fork or a tag.
 
 ### Settings
 
-Optional knobs live in `.env` (created from [`.env.example`](../../.env.example) on first start): license key, proxy, fingerprint seed, and ports. Edit `.env`, then `cloakroom stop` and `cloakroom start`. If you change `CLOAKROOM_CDP_PORT` / `CLOAKROOM_VIEWER_PORT`, export the same variables when running `cloakroom`.
+Optional knobs live in `.env` (created from [`.env.example`](../../.env.example) on first start): license key, proxy, fingerprint seed, timezone, and ports. Edit `.env`, then `cloakroom start`. `cloakroom status` and `cloakroom share` read the ports from `.env` too. Timezone comes from the host when `cloakroom start` can detect it, otherwise `America/Chicago`; set `TZ` in `.env` to override.
 
 ### Limits
 
@@ -292,7 +296,7 @@ Optional knobs live in `.env` (created from [`.env.example`](../../.env.example)
 | "OrbStack did not become ready" | User opens OrbStack from Applications, finishes first-run setup (may ask for the Mac password), then `cloakroom start`. |
 | "permission denied: ./cloakroom" | `chmod +x cloakroom start.sh stop.sh share.sh install.sh`, or `bash cloakroom …`. |
 | "port is already allocated" | Something else uses 9222 or 6080 (often a Chrome with remote debugging). Close it, or change the ports in `.env`. |
-| "cloudflared is not installed" | Mac: `brew install cloudflared`. Linux: re-run `install.sh`, or download `cloudflared-linux-amd64` / `cloudflared-linux-arm64` from https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/downloads/ into `~/.local/bin`. |
+| "cloudflared is not installed" | Re-run `install.sh`, or download `cloudflared-linux-amd64` / `cloudflared-linux-arm64` from https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/downloads/ into `~/.local/bin`. |
 | "`docker info` failed" / permission denied | On Linux, start Docker (`sudo systemctl enable --now docker`) and add the user to the `docker` group (`sudo usermod -aG docker "$USER"`), then log in again. |
 | Tabs crash ("Aw, Snap!") or slow | Quit heavy apps and `cloakroom start`. Memory settings are in the OrbStack app. |
 | "License" / "concurrent session" errors | A free key allows one session at a time. Stop other CloakBrowser sessions (including `examples/cloaktest.sh`) or blank the key. |
@@ -327,13 +331,12 @@ Upstream CloakBrowser runs headed on Xvfb inside the image, so a server needs no
 
 ### Windows
 
-Browser and viewer run on Windows with Docker Desktop (WSL 2). The curl installer is for Mac and Linux.
+Browser and viewer run on Windows with Docker Desktop (WSL 2, Linux containers).
 
-1. Install [Docker Desktop](https://www.docker.com/products/docker-desktop/), restart, wait for **Engine running**.
-2. Get the repo (Download ZIP or `git clone`).
-3. In PowerShell in the repo: `powershell -ExecutionPolicy Bypass -File .\start.ps1`
-4. Test: `docker compose run --rm hello` enters example.com through Bing and prints the title.
-5. Stop: `powershell -ExecutionPolicy Bypass -File .\stop.ps1`
+1. Install [Docker Desktop](https://docs.docker.com/desktop/setup/install/windows-install/), restart, wait for **Engine running**.
+2. In PowerShell: `irm https://raw.githubusercontent.com/jonclegg/cloakroom/main/install.ps1 | iex` <!-- pragma: allowlist secret -->
+3. Later: `& "$HOME\.cloakroom\app\start.ps1"` to start, `& "$HOME\.cloakroom\app\stop.ps1"` to stop. (In a fresh session where scripts are blocked: `powershell -ExecutionPolicy Bypass -File "$HOME\.cloakroom\app\start.ps1"`.)
+4. Test: `docker compose run --rm hello` (from `~\.cloakroom\app`) enters example.com through Bing and prints the title.
 
 For the phone viewer: `winget install --id Cloudflare.cloudflared`, then `cloakroom share` from Git Bash.
 

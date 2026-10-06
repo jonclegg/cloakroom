@@ -15,6 +15,7 @@ services:
       - path: .env
         required: false
     environment:
+      TZ: ${TZ:-America/Chicago}
       CLOAKROOM_HOST_DATA_DIR: ${CLOAKROOM_DATA_DIR:-${HOME}/.cloakroom/data}
       CLOAKROOM_API_HOST_PORT: ${CLOAKROOM_API_PORT:-8423}
     ports:
