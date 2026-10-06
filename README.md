@@ -31,7 +31,7 @@ Cloud agents browse from datacenter servers. Big sites see a datacenter IP and a
 
 Cloakroom brings the browser home. It runs [CloakBrowser](https://github.com/CloakHQ/CloakBrowser), a stealth build of Chromium, on your Mac (OrbStack) or a Linux computer (Docker Engine) with one saved profile. Your agent drives it over CDP from wherever it runs.
 
-How the agent drives it matters too. It enters each site from a Bing search result, moves the mouse and types like a person, and searches with the site's own search box. Starting at Google, or jumping straight to a hot search URL, is what tends to bring up a puzzle. Humanized input avoids needless challenges, and when one shows up anyway, `cloakroom do` works it — including press-and-hold.
+How the agent drives it matters too. It enters each site from a Bing search result, moves the mouse and types like a person, and searches with the site's own search box. Starting at Google, or jumping straight to a hot search URL, is what tends to bring up a puzzle. Humanized input avoids needless challenges, and when one shows up anyway, `cloakroom chat` works it — including press-and-hold.
 
 ## What you get
 
@@ -39,7 +39,7 @@ How the agent drives it matters too. It enters each site from a Bing search resu
 - **Sessions that persist.** Sign in once. Cookies and logins stay in the profile across runs and restarts.
 - **You can watch and help.** Open the live viewer on this computer, or have your agent run `cloakroom share` to get a private link for your phone. Click, type, or sign in when the agent gets stuck.
 - **Standard CDP.** Playwright, Puppeteer, or anything else that speaks the Chrome DevTools Protocol connects to `127.0.0.1:9222`. No SDK.
-- **Or just state the goal.** `cloakroom do "search walmart.com for paper towels"` runs an embedded DeepSeek loop: Cloakroom screenshots the page, DeepSeek picks the next action, Cloakroom carries it out like a person. Your agent sends one command instead of writing a script. It needs an OpenRouter key (`OPENROUTER_API_KEY`) and `python3` with Playwright.
+- **Or just talk to it.** `cloakroom chat "search walmart.com for paper towels"` hands the message to Cloakroom, which drives the browser with DeepSeek and replies when it's done. Follow up in the same tab with `--session`. It remembers what it learned about each site for next time. It needs an OpenRouter key (`OPENROUTER_API_KEY`) and `python3`.
 
 **Proof:** on September 26, 2026, a cloud browser was blocked on twelve big homepages (Home Depot, Ticketmaster, Sam's Club, and others). Cloakroom loaded all twelve.
 
@@ -57,7 +57,7 @@ Because the profile keeps its cookies, most sites ask for a code only on the fir
 
 ## Good to know
 
-- Bot checks change, and new kinds show up. `cloakroom do` works the ones it implements, and you can always finish one yourself in the viewer.
+- Bot checks change, and new kinds show up. `cloakroom chat` works the ones it implements, and you can always finish one yourself in the viewer.
 - Your IP still matters. Traffic leaves from this computer's connection, or from a proxy you set.
 - Only this computer can reach the browser. `cloakroom share` is the one way in from elsewhere, and it exposes only the viewer. Anyone with that link can control your logged-in browser, so keep it private and run `cloakroom unshare` when you're done.
 - The full reference for agents (and the curious) is in [AGENTS.md](AGENTS.md) and [the agent guide](skills/cloakroom/SKILL.md).

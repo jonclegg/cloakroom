@@ -76,7 +76,7 @@ failure observed was a stale challenge; every fresh one passed.
 
 ### 6. Clear only that site's cookies when you need a fresh challenge
 
-A clearance cookie from a previous pass hides the challenge. `cloakroom do`'s
+A clearance cookie from a previous pass hides the challenge. The hunt
 hunt harness deletes cookies for the target domain only (via CDP
 `Network.deleteCookies`), never the whole profile, so the rest of the logged-in
 session survives.

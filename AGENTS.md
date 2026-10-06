@@ -7,16 +7,16 @@ Short version:
 ```bash
 cloakroom status --json          # or ./cloakroom status --json from the repo
 cloakroom start                  # if not ready
-cloakroom do "<goal>"            # let Cloakroom drive the browser itself with DeepSeek
+cloakroom chat "<message>"       # Cloakroom drives the browser with DeepSeek and replies
 cloakroom share --json           # phone viewer; send the url immediately
 cloakroom unshare                # stop the share when they are done
 ```
 
 Drive pages with Playwright: `connect_over_cdp("http://127.0.0.1:9222")`, then use `browser.contexts[0]` (the saved profile, with its cookies).
 
-**Or hand Cloakroom the goal and let it drive.** `cloakroom do "search walmart.com for paper towels"` runs an embedded DeepSeek loop over OpenRouter: Cloakroom screenshots the page, DeepSeek picks the next action, Cloakroom executes it humanized (including press-and-hold). It needs `OPENROUTER_API_KEY` and `python3` with Playwright on the host. Prefer this when the task is a goal rather than a script. See [`skills/cloakroom/SKILL.md`](skills/cloakroom/SKILL.md#cloakroom-do-embedded-deepseek).
+**Or talk to Cloakroom and let it drive.** `cloakroom chat "search walmart.com for paper towels"` sends a message to the chat API inside the container: Cloakroom screenshots the page, DeepSeek (`deepseek/deepseek-v4.1-flash` over OpenRouter) picks the next action, Cloakroom executes it humanized (including press-and-hold), and it replies with a status (`done`, `needs_input`, `blocked`, `failed`). Follow up with `--session <id>` to stay in the same tab. It can read pages, save a listing's photos, and it keeps per-site notes so the next run starts knowing. It needs an OpenRouter key and `python3` on the host, nothing else. Prefer this when the task is a goal rather than a script. See [`skills/cloakroom/SKILL.md`](skills/cloakroom/SKILL.md#cloakroom-chat-cloakroom-drives-you-talk).
 
-**Bing-first entry and humanized input are the default.** Do not `page.goto` the target site, and do not open a search, listing, or product URL as the first navigation. Open `https://www.bing.com`, search the site name or domain, click the organic result (official domain, skip ads), then use that site's own search and links. Google-first often hits `/sorry/` from this CDP session; Bing is the gateway. Pause between actions, move the mouse in a short curve before each click, click a field before typing, and type character by character — [`examples/bing_first.py`](examples/bing_first.py) and [`examples/humanize.py`](examples/humanize.py). That avoids needless challenges. If one still appears, `cloakroom do` works it.
+**Bing-first entry and humanized input are the default.** Do not `page.goto` the target site, and do not open a search, listing, or product URL as the first navigation. Open `https://www.bing.com`, search the site name or domain, click the organic result (official domain, skip ads), then use that site's own search and links. Google-first often hits `/sorry/` from this CDP session; Bing is the gateway. Pause between actions, move the mouse in a short curve before each click, click a field before typing, and type character by character — [`examples/bing_first.py`](examples/bing_first.py) and [`examples/humanize.py`](examples/humanize.py). That avoids needless challenges. If one still appears, `cloakroom chat` works it.
 
 If a site asks for a two-factor code, **you** (Grok Bot or Muse) get it (for example from Messages) and type it into the page. Cloakroom does not read iMessage.
 

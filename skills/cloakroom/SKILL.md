@@ -1,11 +1,11 @@
 ---
 name: cloakroom
-description: Drive a stealth CloakBrowser on the user's Mac (OrbStack) or Linux machine (Docker Engine), over CDP, with a persistent profile that keeps cookies and logins. Use when a site bot-walls your cloud browser, when a session needs to survive between runs, or when the user says "use cloakroom", "do X with cloakroom", or "share the viewer". Hand Cloakroom a goal with `cloakroom do` and it drives the browser itself with DeepSeek, working bot checks as they come up. Enter sites through a Bing organic result and humanize Playwright input; do not open the target with page.goto. If a site asks for a two-factor code, you (Grok Bot or Muse) get it and type it in; Cloakroom never reads Messages. When the user wants the viewer on a phone or away from home, run `cloakroom share` and send the HTTPS URL immediately. Do not ask them to confirm. Do not use Tailscale.
+description: Drive a stealth CloakBrowser on the user's Mac (OrbStack) or Linux machine (Docker Engine), over CDP, with a persistent profile that keeps cookies and logins. Use when a site bot-walls your cloud browser, when a session needs to survive between runs, or when the user says "use cloakroom", "do X with cloakroom", or "share the viewer". Talk to Cloakroom with `cloakroom chat` and it drives the browser itself with DeepSeek, working bot checks as they come up, and replies. Enter sites through a Bing organic result and humanize Playwright input; do not open the target with page.goto. If a site asks for a two-factor code, you (Grok Bot or Muse) get it and type it in; Cloakroom never reads Messages. When the user wants the viewer on a phone or away from home, run `cloakroom share` and send the HTTPS URL immediately. Do not ask them to confirm. Do not use Tailscale.
 ---
 
 # Cloakroom skill
 
-Cloakroom is a local CLI: `cloakroom`, or `./cloakroom` from this repo. The CLI itself is plain bash; `cloakroom do` additionally needs `python3` with Playwright on the host (the same requirement as driving CDP yourself).
+Cloakroom is a local CLI: `cloakroom`, or `./cloakroom` from this repo. The CLI itself is plain bash; `cloakroom chat` additionally needs `python3` (standard library only).
 It controls a stealth Chromium (`cloakhq/cloakbrowser`) in OrbStack on a Mac, or in Docker Engine on Linux. The browser, the viewer, and the saved profile stay on the machine.
 
 ```text
@@ -67,7 +67,7 @@ The browser keeps running in the background (as long as OrbStack or Docker Engin
 
    Google-first search from this CDP session often lands on Google `/sorry/` (unusual-traffic reCAPTCHA). **Bing is the search gateway** for Cloakroom. Do not start at Google.
 
-   The one direct-URL exception: the user handed you one exact page to open (a login URL they named, a doc they linked). You may open that URL. Still humanize everything after it loads. If that URL is challenged, work the challenge (`cloakroom do`) rather than retreating; fall back to Bing and the site's own UI only if the challenge won't clear.
+   The one direct-URL exception: the user handed you one exact page to open (a login URL they named, a doc they linked). You may open that URL. Still humanize everything after it loads. If that URL is challenged, work the challenge (`cloakroom chat`) rather than retreating; fall back to Bing and the site's own UI only if the challenge won't clear.
 
 4. **Humanize interactions**
 
@@ -88,7 +88,7 @@ The browser keeps running in the background (as long as OrbStack or Docker Engin
    humanize.human_click(page, page.get_by_role("button", name="Search"))
    ```
 
-   This is how you avoid needless challenges. If a challenge does appear, `cloakroom do` works it (see [`cloakroom do`](#cloakroom-do-embedded-deepseek)), or the user finishes it in the viewer.
+   This is how you avoid needless challenges. If a challenge does appear, `cloakroom chat` works it (see [`cloakroom chat`](#cloakroom-chat-cloakroom-drives-you-talk)), or the user finishes it in the viewer.
 
 5. **Bring in the user when needed**
 
@@ -126,38 +126,66 @@ Every command takes `--json`.
 | --- | --- |
 | `cloakroom start` / `stop` | Start or stop the browser. The profile is kept. |
 | `cloakroom status --json` | Is the container engine up, is the browser ready, and the viewer, CDP, and share URLs. Exits non-zero in text mode when not ready. |
-| `cloakroom do "<goal>"` | Hand Cloakroom a goal and let it drive the browser with DeepSeek. See below. |
+| `cloakroom chat "<message>"` | Talk to Cloakroom; it drives the browser with DeepSeek and replies. See below. |
+| `cloakroom run <id>` / `cancel <id>` | A run's steps, reply and files; or stop it. |
+| `cloakroom notes [site]` | What Cloakroom has learned, per site. |
 | `cloakroom share --json` | Start a private HTTPS link to the viewer and print it. |
 | `cloakroom unshare` | Stop that link. It stops working immediately. |
 
 `start` / `stop` run [`start.sh`](../../start.sh) / [`stop.sh`](../../stop.sh), which also work on their own. `share` / `unshare` run [`share.sh`](../../share.sh).
 
-## `cloakroom do` (embedded DeepSeek)
+## `cloakroom chat` (Cloakroom drives, you talk)
 
-Instead of scripting Playwright yourself, hand Cloakroom the goal:
+Instead of scripting Playwright yourself, talk to Cloakroom. It works the browser with
+DeepSeek and replies when it is finished or needs you:
 
 ```bash
-cloakroom do "go to walmart.com and search for paper towels"
-cloakroom do "find the order status page on amazon.com" --json
-cloakroom do "get past the bot check so the page loads"
+cloakroom chat "go to walmart.com and search for paper towels"
+cloakroom chat --session s_... "now sort by price and tell me the cheapest"
+cloakroom chat --json "find the order status page on amazon.com"
+cloakroom run r_...            # every step, the reply, saved files
+cloakroom notes cars.com       # what it has learned about a site
 ```
 
-[`agent/cloakroom_agent.py`](../../agent/cloakroom_agent.py) loops: screenshot the page,
-ask DeepSeek (via OpenRouter) what to do, execute that action humanized, repeat until
-the model says `done` or it hits `--max-steps`.
+The chat API runs inside the container ([`agent/server.py`](../../agent/server.py)), so
+CDP never leaves loopback and the host needs only `python3` (standard library). Each
+message is one run: screenshot, ask DeepSeek (via OpenRouter) for one action, execute it
+humanized, repeat until the model replies or hits `--max-steps` (default 40).
 
-| Flag | Meaning |
-| --- | --- |
-| `--json` | One JSON object: goal, every step, final URL, error. |
-| `--model` | OpenRouter model id. Default `deepseek/deepseek-v4-flash-vision-exp` (the image-capable DeepSeek). |
-| `--max-steps` | Stop after N actions. Default 15. |
-| `--tab` | Tab index or URL substring to drive. Default: a tab showing a bot check, else the newest non-Bing tab. |
-| `--shots` | Where step screenshots go. Default `~/.cloakroom/shots`. |
+| Reply status | Meaning | What you do |
+| --- | --- | --- |
+| `done` | Finished. The reply has what you asked for. | Use it. |
+| `needs_input` | It needs something: a two-factor code, a choice. | Answer with `--session`. Codes: you fetch them, as always. |
+| `blocked` | A bot check it could not clear. | The user finishes it in the viewer, then you continue the session. |
+| `failed` / `step_limit` | It did not get there. | Read `cloakroom run <id>`; rephrase, or raise `--max-steps`. |
 
-It needs a key and a host Python:
+A **session** is one tab and its conversation. Without `--session` you get a new tab. Pass
+the session id from the last reply to follow up in the same tab. Sessions expire after 30
+idle minutes. One browser has one mouse, so runs queue.
 
-- `OPENROUTER_API_KEY` in the environment or in `.env` (see [`.env.example`](../../.env.example)), or the key in `~/.cloakroom/.openrouter.key`.
-- `python3` with `playwright` on the host, the same requirement as driving CDP yourself.
+**What it can do beyond clicking:** `read` (the page's text and links, for prices and listing
+URLs), `back`, `goto` (only on a site it has already entered; other sites go through
+Bing-first `open`), and `save_images` (the photo gallery of the item on the page, downloaded
+through the browser session, one file per photo at its largest size). Saved files are in
+`~/.cloakroom/data/runs/<run>/files/`, and the reply lists them.
+
+**It keeps notes for itself.** During a run it can `remember` facts it will need later in
+that message (old steps scroll out of its prompt). When it learns something about a site
+(a bot check and what cleared it, where a feature lives), it writes a `note` to that site's
+notebook. Every run is logged per site, and a run that hit trouble ends with one extra call
+that turns the step log into lessons. The notebook for the site on screen goes into every
+prompt, so the next run starts knowing. All of it is plain files under
+`~/.cloakroom/data/notes/sites/` (`<site>.md` for lessons, `<site>.jsonl` for the run log).
+
+**The model** is `deepseek/deepseek-v4.1-flash` (set `CLOAKROOM_MODEL` in `.env` to change
+it). Of OpenRouter's DeepSeek models only the Flash line accepts images; V3.x, V4 and V4 Pro
+reject image input. It needs a key: `OPENROUTER_API_KEY` in `.env` (see
+[`.env.example`](../../.env.example)) or the key in `~/.cloakroom/data/openrouter.key`.
+
+**The API itself**, if you would rather call it than the CLI: `POST
+http://127.0.0.1:8423/v1/chat` with `{"message": "...", "session": null}` and
+`Authorization: Bearer $(cat ~/.cloakroom/data/api-token)`. The other routes are listed at
+the top of [`agent/server.py`](../../agent/server.py).
 
 **How it targets things.** Screenshots are captured at CSS scale, so one screenshot pixel is
 one CSS pixel, and the model is told the exact image size. Cloakroom also reads the visible
@@ -165,8 +193,8 @@ interactive elements out of the DOM and hands the model their centre coordinates
 That is what makes clicks land: on Walmart's PerimeterX press-and-hold the model picks the
 button centre to the pixel.
 
-**Bot checks.** `do` reports a bot check in the step output and in `--json` (`blocked`,
-`block_type`) and works it, picking the action by kind:
+**Bot checks.** A run reports bot checks in its steps (`blocked`, `block_type`) and works
+them, picking the action by kind:
 
 | `block_type` | Action | Notes |
 | --- | --- | --- |
@@ -191,11 +219,11 @@ it once sets a clearance cookie, and Walmart stops challenging for a while.
 
 - Never print, log, or store the user's password or two-factor codes in chat or files.
 - Cloakroom does not read iMessage. You do, if a code is needed.
-- Ports 9222 and 6080 stay on `127.0.0.1`.
+- Ports 9222, 6080 and 8423 stay on `127.0.0.1`.
 - Remote viewer access is one command: `cloakroom share`. Run it and send the URL immediately. Do not ask for approval first, and do not add a confirmation step. The URL is a secret capability link. Run `cloakroom unshare` when the user is done. Do not use Tailscale, Funnel, or port forwards. Never tunnel 9222.
 - Enter sites through Bing: search the name or domain, click the organic result, then use the site's own UI. Do not `page.goto` the target, and do not open search, listing, or product URLs as the first navigation. Google-first often hits `/sorry/` from Cloakroom CDP; Bing is the gateway.
 - Humanize Playwright input by default: random pauses, a curved `mouse.move` before clicks, click a field before typing, type character by character. Do not `fill()` bot-sensitive forms. Helpers: [`examples/humanize.py`](../../examples/humanize.py), entry: [`examples/bing_first.py`](../../examples/bing_first.py).
-- When a challenge appears, `cloakroom do` works it (press-and-hold and the like). The user can also finish it in the viewer.
+- When a challenge appears, `cloakroom chat` works it (press-and-hold and the like). The user can also finish it in the viewer.
 
 ## Reference
 
@@ -212,7 +240,7 @@ Optional knobs live in `.env` (created from [`.env.example`](../../.env.example)
 
 ### Limits
 
-- Bot checks change and new ones appear. `cloakroom do` works the kinds it implements — press-and-hold today (PerimeterX and similar); others land as they come up. When it can't clear one, the user finishes it in the viewer and the agent carries on from there.
+- Bot checks change and new ones appear. `cloakroom chat` works the kinds it implements — press-and-hold today (PerimeterX and similar); others land as they come up. When it can't clear one, the user finishes it in the viewer and the agent carries on from there.
 - A loaded homepage is not a login or a checkout. The profile carries cookies and logins across runs, but a challenge can still appear later in a flow.
 - Traffic leaves from this computer's connection or `CLOAKROOM_PROXY`. A home connection is the strongest; a flagged IP, VPN, or datacenter proxy draws more challenges.
 - Grok Bot's **Route traffic through this computer** setting alone clears many IP blocks. Cloakroom is for sites that also fingerprint the browser (e.g. Sam's Club's press-and-hold page), or when the user wants a persistent local profile they can watch.
@@ -223,6 +251,7 @@ Optional knobs live in `.env` (created from [`.env.example`](../../.env.example)
 - Port 9222 is full control of a signed-in browser, and the viewer has no password. Neither is published beyond `127.0.0.1`.
 - The profile lives in the `profile` Docker volume. `docker compose down -v` deletes it and signs the user out of everything.
 - Cloakroom does not store passwords or codes. `.env` (license key, proxy password) is git-ignored.
+- The chat API (8423) drives the same signed-in browser, so it takes a bearer token: `~/.cloakroom/data/api-token`, created on first start, mode 600.
 
 ### Troubleshooting
 
@@ -236,7 +265,7 @@ Optional knobs live in `.env` (created from [`.env.example`](../../.env.example)
 | Tabs crash ("Aw, Snap!") or slow | Quit heavy apps and `cloakroom start`. Memory settings are in the OrbStack app. |
 | "License" / "concurrent session" errors | A free key allows one session at a time. Stop other CloakBrowser sessions (including `examples/cloaktest.sh`) or blank the key. |
 | Need logs | `docker compose logs -f cloakroom` from the repo. |
-| Direct URL shows a challenge, homepage would not | Do not reload the hot search or product URL. Enter through Bing, click the organic homepage, then search with the site's own box using humanized input. If a challenge is already up, `cloakroom do` works it, or the user solves it in the viewer. |
+| Direct URL shows a challenge, homepage would not | Do not reload the hot search or product URL. Enter through Bing, click the organic homepage, then search with the site's own box using humanized input. If a challenge is already up, `cloakroom chat` works it, or the user solves it in the viewer. |
 
 ### Linux
 

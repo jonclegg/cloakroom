@@ -1,6 +1,7 @@
 # Architecture: chat over REST
 
-Status: **proposal, not built.** This branch exists to review it before writing code.
+Status: **built** on the `cloakroom-deepseek` branch. Sections 1-11 are the proposal as
+reviewed; [section 12](#12-as-built) lists where the build differs.
 
 ## 1. What changes
 
@@ -262,3 +263,24 @@ that already works.
 3. **Should the CLI keep working with no API running** — i.e. `cloakroom do` falls
    back to the in-process loop — or should it require the service?
 4. **Session default lifetime** — 15 minutes of idle, or longer?
+
+## 12. As built
+
+What shipped on `cloakroom-deepseek`, and where it departs from the proposal above.
+
+| Proposal | Built |
+| --- | --- |
+| `POST /v1/chat` with `prompt` | `{"message", "session", "max_steps", "wait"}`. The reply carries a `status`: `done`, `needs_input`, `blocked`, `failed`, `step_limit`, `cancelled`. `needs_input` is how Cloakroom asks the caller for a code or a choice. |
+| FastAPI + uvicorn | Standard-library `ThreadingHTTPServer`. The base image already has Python and Playwright, so the API adds no packages. |
+| SSE progress | Not built. `wait: false` returns the run id; `GET /v1/runs/{id}` shows steps as they land. |
+| YAML knowledge pack | A notebook the model writes itself: `notes/sites/<site>.md` (lessons, via the `note` field and an end-of-run reflection when a run hit trouble) and `<site>.jsonl` (an automatic per-site run log). The notebook for the current host is in every prompt. The 22-site playbook is not imported yet. |
+| — | Working memory: the `remember` field keeps facts for the rest of the message, since the step history in the prompt is a window. |
+| — | New actions: `read` (page text and links), `back`, `save_images` (the item's photo gallery, downloaded through the browser context and kept once per photo at its largest), `reply`. `goto` is refused for a site not yet entered. |
+| Model `deepseek-v4.1-flash` | Same, with `reasoning: {effort: "low"}`. On a grounding probe it landed within 5 px of a button centre; with reasoning off it was 20-45 px off, and `deepseek-v4-flash-vision-exp` was 25-65 px off at five times the price. DeepSeek V3.x, V4 and V4 Pro reject image input on OpenRouter. |
+| Token in `~/.cloakroom/api-token` | `~/.cloakroom/data/api-token`. The data folder is bind-mounted at `/data`, and the API runs as the folder's owner so files are not root's on Linux. |
+| `cloakroom do` as a thin client | Replaced by `cloakroom chat`, `run`, `cancel`, `notes` ([`agent/client.py`](../agent/client.py), standard library). |
+| One run at a time | Same: one worker thread owns Playwright and drains a queue. Sessions idle out after 30 minutes and close their tab. |
+
+Open questions from section 11, as decided: port 8423; bypass is always on (there is no
+`allow_barrier_bypass` switch yet); the CLI requires the service; sessions idle out at 30
+minutes.
