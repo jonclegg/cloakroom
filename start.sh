@@ -150,6 +150,9 @@ fi
 
 if [ "${CLOAKROOM_DEV:-}" = 1 ]; then
   echo "1/3 Building Cloakroom from this folder (CLOAKROOM_DEV=1)..."
+  # Every compose command in this run sees the build sections too.
+  compose_files="$(sed -n 's/^COMPOSE_FILE=//p' .env | tail -n 1)"
+  export COMPOSE_FILE="${compose_files:-docker-compose.yml}:docker-compose.dev.yml"
   docker compose build --quiet cloakroom
 else
   echo "1/3 Downloading Cloakroom (first time can take a few minutes)..."

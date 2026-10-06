@@ -44,6 +44,8 @@ New-Item -ItemType Directory -Force -Path $env:CLOAKROOM_DATA_DIR | Out-Null
 
 if ($env:CLOAKROOM_DEV -eq "1") {
     Write-Host "1/3 Building Cloakroom from this folder (CLOAKROOM_DEV=1)..."
+    # Every compose command in this run sees the build sections too.
+    $env:COMPOSE_FILE = "docker-compose.yml;docker-compose.dev.yml"
     Invoke-Docker compose build --quiet cloakroom
 } else {
     Write-Host "1/3 Downloading Cloakroom (first time can take a few minutes)..."
