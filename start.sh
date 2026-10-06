@@ -142,9 +142,22 @@ export_host_timezone
 # Linux the bind mount is ours and the API runs as us rather than root.
 mkdir -p "${CLOAKROOM_DATA_DIR:-${HOME}/.cloakroom/data}"
 
-echo "1/3 Downloading the latest CloakBrowser image (first time can take a few minutes)..."
-docker compose pull hello --quiet
-docker compose build --pull --quiet cloakroom
+# On a Mac, present the browser as a Mac (docker-compose.mac.yml). Compose reads
+# COMPOSE_FILE from .env, so every later compose command picks it up too.
+if [ "$(uname -s)" = "Darwin" ] && ! grep -qE '^COMPOSE_FILE=' .env; then
+  printf '\n# Set by start.sh on a Mac: macOS persona, Retina screen, and Mac fonts.\nCOMPOSE_FILE=docker-compose.yml:docker-compose.mac.yml\n' >> .env
+fi
+
+if [ "${CLOAKROOM_DEV:-}" = 1 ]; then
+  echo "1/3 Building Cloakroom from this folder (CLOAKROOM_DEV=1)..."
+  # Every compose command in this run sees the build sections too.
+  compose_files="$(sed -n 's/^COMPOSE_FILE=//p' .env | tail -n 1)"
+  export COMPOSE_FILE="${compose_files:-docker-compose.yml}:docker-compose.dev.yml"
+  docker compose build --quiet cloakroom
+else
+  echo "1/3 Downloading Cloakroom (first time can take a few minutes)..."
+  docker compose pull --quiet cloakroom
+fi
 
 echo "2/3 Starting the browser..."
 if ! up_log="$(docker compose up -d --force-recreate cloakroom 2>&1)"; then
@@ -162,8 +175,9 @@ then run: cloakroom start"
   fail "Docker could not start the browser. See the message above."
 fi
 
+# The first start also downloads the browser itself from CloakHQ (~150 MB).
 echo "3/3 Waiting for the browser to be ready..."
-for _ in $(seq 1 150); do
+for _ in $(seq 1 300); do
   status="$(docker inspect -f '{{.State.Health.Status}}' cloakroom 2>/dev/null || echo missing)"
   [ "$status" = "healthy" ] && break
   sleep 2
@@ -187,6 +201,9 @@ ${green}${bold}You're ready!${reset}
   Chat with it:       cloakroom chat "<message>"   (API ${api_url})
   Watch from a phone: cloakroom share
   Stop everything:    cloakroom stop
+
+  Next: cloakroom key     paste your OpenRouter key into the page it opens
+        cloakroom smoke   check it can reach Amazon, Walmart, Target and Best Buy
 
   Only this computer can connect. Your logins are kept between restarts.
 

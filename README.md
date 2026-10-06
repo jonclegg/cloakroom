@@ -1,73 +1,39 @@
 <p align="center">
-  <img alt="Cloakroom" src="docs/brand/cloak-logo.png" width="220">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/brand/cloak-logo.png">
+    <img alt="Cloakroom" src="docs/brand/cloak-logo-light.png" width="200">
+  </picture>
 </p>
 
-**A stealth browser for AI agents: fewer bot walls, and logins that stick.**
+<h3 align="center">A browser for your AI agent that big websites don't block, and that stays logged in.</h3>
 
-[![Watch the video (0:27)](docs/media/cloakroom-promo-poster.jpg)](docs/media/cloakroom-promo.mp4)
+<p align="center"><a href="docs/media/cloakroom-promo.mp4">Watch the 27-second video</a> · <a href="https://jonclegg.github.io/cloakroom/">Project page</a></p> <!-- pragma: allowlist secret -->
 
-Watch the [video](docs/media/cloakroom-promo.mp4) (0:27), or see the [project page](https://jonclegg.github.io/cloakroom/). <!-- pragma: allowlist secret -->
+## Install
 
-## Quickstart
+Tell your agent (Claude Code, Codex, Cursor, Grok, and so on):
 
-Tell your agent (Grok Bot, Muse, Cursor, Claude Code, Codex) to install Cloakroom, or run it yourself.
+> **Install Cloakroom from https://github.com/jonclegg/cloakroom**
 
-macOS or Linux:
+That's it. Your agent will:
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/jonclegg/cloakroom/main/install.sh | sh # // pragma: allowlist secret
-```
+1. **Install Cloakroom** on your Mac, Linux, or Windows computer.
+2. **Ask before installing Docker**, if your computer doesn't have it yet.
+3. **Open a page for your OpenRouter key.** Cloakroom's built-in agent uses it to drive the browser. You paste the key into that page on your own computer, never into the chat. Get one at [openrouter.ai/keys](https://openrouter.ai/keys).
+4. **Prove it works.** Cloakroom visits Amazon, Walmart, Target and Best Buy the way a person would, and shows you a screenshot of each.
 
-Windows (PowerShell):
+## Use it
 
-```powershell
-irm https://raw.githubusercontent.com/jonclegg/cloakroom/main/install.ps1 | iex # // pragma: allowlist secret
-```
+Ask your agent to do things on websites "with Cloakroom", for example: *"With Cloakroom, find a 12-cup coffee maker under $50 on Walmart."* Cloakroom drives a real browser on your computer, works through bot checks, and remembers your logins between sessions.
 
-- **Mac:** uses OrbStack, or a Docker engine you already run (Docker Desktop, Colima). With neither, it installs OrbStack (macOS 14+). Apple Silicon and Intel.
-- **Linux (amd64 or arm64):** needs [Docker Engine](https://docs.docker.com/engine/install/) and the Compose plugin working for your user. If anything's missing, the installer says exactly what and how to fix it.
-- **Windows:** needs [Docker Desktop](https://docs.docker.com/desktop/setup/install/windows-install/) running Linux containers (WSL 2).
-- **Updating:** run the same command again. Your settings in `.env` are kept, and the previous copy is saved in `~/.cloakroom/app.previous`.
-
-Or just hand your agent this repo's URL. It reads the instructions here and handles the rest.
-
-## Why Cloakroom
-
-Cloud agents browse from datacenter servers. Big sites see a datacenter IP and an automated browser, and they put up a bot wall. Every session also starts fresh, so the login from yesterday is gone today.
-
-Cloakroom brings the browser home. It runs [CloakBrowser](https://github.com/CloakHQ/CloakBrowser), a stealth build of Chromium, on your Mac (OrbStack) or a Linux computer (Docker Engine) with one saved profile. Your agent drives it over CDP from wherever it runs.
-
-How the agent drives it matters too. It enters each site from a Bing search result, moves the mouse and types like a person, and searches with the site's own search box. Starting at Google, or jumping straight to a hot search URL, is what tends to bring up a puzzle. Humanized input avoids needless challenges, and when one shows up anyway, `cloakroom chat` works it — including press-and-hold.
-
-## What you get
-
-- **Harder to detect.** A stealth browser on your own connection, not an automated browser in a datacenter.
-- **Sessions that persist.** Sign in once. Cookies and logins stay in the profile across runs and restarts.
-- **You can watch and help.** Open the live viewer on this computer, or have your agent run `cloakroom share` to get a private link for your phone. Click, type, or sign in when the agent gets stuck.
-- **Standard CDP.** Playwright, Puppeteer, or anything else that speaks the Chrome DevTools Protocol connects to `127.0.0.1:9222`. No SDK.
-- **Or just talk to it.** `cloakroom chat "search walmart.com for paper towels"` hands the message to Cloakroom, which drives the browser with DeepSeek and replies when it's done. Follow up in the same tab with `--session`. It remembers what it learned about each site for next time. It needs an OpenRouter key, which you paste into a local page that `cloakroom key` opens (never into your agent's chat), and `python3`.
-
-**Proof:** on September 26, 2026, a cloud browser was blocked on twelve big homepages (Home Depot, Ticketmaster, Sam's Club, and others). Cloakroom loaded all twelve.
-
-The explainer also shows real screenshots: Google's `/sorry/` page after Google-first automation, Alibaba's slider after loading its search URL directly, and Alibaba's results after entering through Bing and searching with humanized input. They're in [`docs/media/evidence`](docs/media/evidence).
-
-## Text-message codes (2FA)
-
-When a site texts you a sign-in code, **your agent handles the code, not Cloakroom.** Cloakroom doesn't read your texts or iMessage, and it doesn't catch codes automatically. It gives you the browser where the code goes.
-
-1. Your agent (Grok Bot, Muse, Cursor, and so on) gets the code. It might read it from Messages on your Mac or from your email.
-2. The agent types the code into the sign-in page in Cloakroom.
-3. If the agent can't get the code, you type it yourself in the viewer, or on your phone using a `cloakroom share` link. Don't paste codes into the chat.
-
-Because the profile keeps its cookies, most sites ask for a code only on the first sign-in, and later sessions usually skip it. Agents will find the details in [the agent guide](skills/cloakroom/SKILL.md).
+Watch it work at http://127.0.0.1:6080, or ask your agent to share a link so you can watch from your phone.
 
 ## Good to know
 
-- Bot checks change, and new kinds show up. `cloakroom chat` works the ones it implements, and you can always finish one yourself in the viewer.
-- Your IP still matters. Traffic leaves from this computer's connection, or from a proxy you set.
-- Only this computer can reach the browser. `cloakroom share` is the one way in from elsewhere, and it exposes only the viewer. Anyone with that link can control your logged-in browser, so keep it private and run `cloakroom unshare` when you're done.
-- The full reference for agents (and the curious) is in [AGENTS.md](AGENTS.md) and [the agent guide](skills/cloakroom/SKILL.md).
+- **Sign in yourself.** When a site needs a password, type it in the viewer. Don't paste it into the chat. Your agent can type in texted sign-in codes for you.
+- **It runs on your computer.** Traffic leaves from your own internet connection, and nothing is reachable from outside unless you share the viewer link. Anyone who has that link can control your logged-in browser, so keep it private.
+- **The details** for agents and the curious are in [AGENTS.md](AGENTS.md) and [the agent guide](skills/cloakroom/SKILL.md). The browser is [CloakBrowser](https://github.com/CloakHQ/CloakBrowser), run from [this fork](https://github.com/jonclegg/CloakBrowser/tree/cloakroom-fixes).
 
 ## License
 
-Cloakroom's own code is [MIT licensed](LICENSE). The CloakBrowser binary inside the official image belongs to CloakHQ and has its own [Binary License](https://github.com/CloakHQ/CloakBrowser/blob/main/BINARY-LICENSE.md). See [NOTICE](NOTICE). Cloakroom is an independent community project, not affiliated with CloakHQ or any site mentioned here.
+Cloakroom's own code is [MIT licensed](LICENSE). The CloakBrowser binary belongs to CloakHQ and has its own [Binary License](https://github.com/CloakHQ/CloakBrowser/blob/main/BINARY-LICENSE.md). Cloakroom's image doesn't include it: your container downloads it from CloakHQ the first time it starts. See [NOTICE](NOTICE). Cloakroom is an independent community project, not affiliated with CloakHQ or any site mentioned here.

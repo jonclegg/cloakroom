@@ -1,0 +1,26 @@
+# Build Cloakroom from this folder instead of pulling it:
+#   CLOAKROOM_DEV=1 cloakroom start
+# start.sh adds this file to COMPOSE_FILE for that run. CLOAKBROWSER_SOURCE points
+# the base at a local checkout of the fork instead of its GitHub branch.
+services:
+  # Base image only: never started. CloakBrowser from the jonclegg fork, which adds
+  # a persistent default seed, process limits, GeoIP without a proxy, coherent
+  # window geometry and hardware, and native X11 input. Built without the
+  # browser binary, which the container downloads from CloakHQ on first start.
+  cloakbrowser:
+    build:
+      context: ${CLOAKBROWSER_SOURCE:-https://github.com/jonclegg/CloakBrowser.git#cloakroom-fixes}
+      args:
+        PREFETCH_BINARY: "false"
+    image: cloakroom-cloakbrowser:local
+    entrypoint: ["true"]
+    restart: "no"
+
+  cloakroom:
+    build:
+      context: ./image
+      additional_contexts:
+        agent: ./agent
+        examples: ./examples
+        cloakbrowser: service:cloakbrowser
+    image: ${CLOAKROOM_IMAGE:-cloakroom:dev}

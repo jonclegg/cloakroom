@@ -1,0 +1,133 @@
+# Publishes ghcr.io/jonclegg/cloakroom, the image `cloakroom start` pulls.
+#
+# Each architecture builds natively (no emulation): first the CloakBrowser base
+# from the jonclegg fork, without the browser binary (the Binary License forbids
+# redistributing it; each user's container downloads it from CloakHQ on first
+# start), then Cloakroom on top. A last job joins the two into one tag.
+#
+# main publishes :latest; any other branch publishes :<branch> for testing with
+# CLOAKROOM_IMAGE=ghcr.io/jonclegg/cloakroom:<branch>.
+name: image
+
+on:
+  push:
+    branches: ["**"]
+    paths:
+      - "image/**"
+      - "agent/**"
+      - "examples/humanize.py"
+      - "examples/bing_first.py"
+      - ".github/workflows/image.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE: ghcr.io/jonclegg/cloakroom
+  BASE_IMAGE: ghcr.io/jonclegg/cloakroom-base
+  FORK: https://github.com/jonclegg/CloakBrowser.git
+  FORK_BRANCH: cloakroom-fixes
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Pin the fork commit
+        id: fork
+        run: echo "sha=$(git ls-remote "$FORK" "refs/heads/$FORK_BRANCH" | cut -f1)" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build the CloakBrowser base
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ env.FORK }}#${{ steps.fork.outputs.sha }}
+          build-args: PREFETCH_BINARY=false
+          platforms: linux/${{ matrix.arch }}
+          push: true
+          tags: ${{ env.BASE_IMAGE }}:${{ steps.fork.outputs.sha }}-${{ matrix.arch }}
+          cache-from: type=gha,scope=base-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=base-${{ matrix.arch }}
+
+      - name: Build Cloakroom
+        id: cloakroom
+        uses: docker/build-push-action@v6
+        with:
+          context: image
+          build-contexts: |
+            cloakbrowser=docker-image://${{ env.BASE_IMAGE }}:${{ steps.fork.outputs.sha }}-${{ matrix.arch }}
+            agent=agent
+            examples=examples
+          platforms: linux/${{ matrix.arch }}
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+            io.github.jonclegg.cloakbrowser-fork=${{ steps.fork.outputs.sha }}
+          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=cloakroom-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=cloakroom-${{ matrix.arch }}
+
+      - name: Keep the digest
+        run: |
+          mkdir -p /tmp/digests
+          touch "/tmp/digests/${DIGEST#sha256:}"
+        env:
+          DIGEST: ${{ steps.cloakroom.outputs.digest }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: digest-${{ matrix.arch }}
+          path: /tmp/digests/*
+          retention-days: 1
+
+  publish:
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: digest-*
+          merge-multiple: true
+          path: /tmp/digests
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Tag
+        id: tag
+        run: |
+          if [ "$GITHUB_REF_NAME" = main ]; then
+            echo "tag=latest" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=$(printf '%s' "$GITHUB_REF_NAME" | tr -c 'A-Za-z0-9_.-' '-')" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish the multi-arch tag
+        working-directory: /tmp/digests
+        run: |
+          docker buildx imagetools create \
+            -t "$IMAGE:${{ steps.tag.outputs.tag }}" \
+            -t "$IMAGE:sha-${GITHUB_SHA::12}" \
+            $(printf "$IMAGE@sha256:%s " *)
+          docker buildx imagetools inspect "$IMAGE:${{ steps.tag.outputs.tag }}"

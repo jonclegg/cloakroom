@@ -1,13 +1,10 @@
 name: cloakroom
 
 services:
+  # Users pull the published image (`cloakroom start` does). Developers build it
+  # from this folder with CLOAKROOM_DEV=1 cloakroom start (docker-compose.dev.yml).
   cloakroom:
-    build:
-      context: ./image
-      additional_contexts:
-        agent: ./agent
-        examples: ./examples
-    image: cloakroom:local
+    image: ${CLOAKROOM_IMAGE:-ghcr.io/jonclegg/cloakroom:latest}
     container_name: cloakroom
     hostname: cloakroom
     restart: unless-stopped
@@ -36,10 +33,11 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 60s
+      # The first start downloads the browser from CloakHQ.
+      start_period: 300s
 
   hello:
-    image: cloakhq/cloakbrowser:latest
+    image: ${CLOAKROOM_IMAGE:-ghcr.io/jonclegg/cloakroom:latest}
     profiles: ["examples"]
     depends_on:
       cloakroom:

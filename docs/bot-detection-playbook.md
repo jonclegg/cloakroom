@@ -258,6 +258,10 @@ processes**; the CDP endpoint then answered `502` to everything and 25 sites wer
 never probed. `docker exec cloakroom ps aux | grep -c chrome` shows the pile-up;
 `cloakroom stop && start` reclaims it and the saved profile survives.
 
+**Fixed in the fork:** idle extra identities close after 5 minutes, and at most 8
+browsers run; at the cap the least recently used idle one closes, otherwise the
+launch gets a clear `503`.
+
 ### A failed screenshot silently lost winnable challenges
 
 PerimeterX overlays navigate as they arm, destroying the page context mid-capture.
@@ -272,11 +276,49 @@ succeeded.
 `cloakserve` derives a timezone from GeoIP **only when a proxy is set**. With
 `CLOAKROOM_PROXY` blank — the normal case — the browser reported
 `Intl...timeZone === "UTC"` while the UA said Windows and traffic exited from
-Texas. A US Windows desktop on UTC is a recognisable tell. `start.sh` now reads
-the host timezone and forwards it; the browser reports `America/Chicago`.
+Texas. A US Windows desktop on UTC is a recognisable tell.
 
-Set it per-container: cloakserve logs *"first-launch wins"* and ignores
-`?timezone=` for a seed already running.
+**Fixed in the fork:** `cloakserve --geoip` resolves timezone and locale from the
+egress IP with or without a proxy; the browser reports `America/Chicago`. A
+reconnect with a different `?timezone=` for a running seed is now a `409` instead
+of being silently ignored.
+
+### navigator.languages disagreed with Accept-Language
+
+Pinning a locale with `--fingerprint-locale=en-US` makes `navigator.languages`
+`["en-US"]` while the request header still says `en-US,en;q=0.9`. Real Chrome
+reports `["en-US", "en"]`. The fork sets only `--lang` for en-US, the binary's own
+locale, so both agree. Other locales still show the split (a binary issue).
+
+### The default identity changed fingerprint on every restart
+
+With no seed configured, `cloakserve` rolled a new random seed each launch while
+the profile, and its clearance cookies, carried over. That undercut identity
+aging: every restart presented the old cookies from a "new device". **Fixed in the
+fork:** the seed is written to the profile (`.cloakserve-seed`) once and reused.
+
+### The window reported an impossible position
+
+The free Chromium 146 binary reports `screenX/screenY` at a seeded offset that
+depends only on the window size. Maximized, that put a 1920-wide window at
+`screenX` 10 on a 1920-wide screen. **Fixed in the fork:** the window is sized so
+the reported box sits inside the available screen, and the real window is moved
+to match.
+
+### Hardware that no real machine has
+
+Every seed reported 8 threads and 8 GB beside whatever GPU it drew, including an
+RTX 5090 and laptop GPUs on a 1080p DPR-1 desktop. **Fixed in the fork:** one
+coherent desktop NVIDIA profile per seed; WebGPU's architecture follows it
+(`ampere` for an RTX 3060, `lovelace` for an RTX 4060 Ti).
+
+### CDP input vs real input
+
+Measured side by side, CDP mouse events and X11 (`xdotool`) events carry the same
+properties: trusted, same `screenX/Y`, pointer type, pressure, coalesced events.
+The binary also hides the `Runtime.enable` console-getter leak. Cloakroom now sends
+all input through the fork's `POST /input` (real X11 events) anyway, so input never
+takes the CDP path.
 
 ### Homepages are the easy case
 

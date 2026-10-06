@@ -30,9 +30,18 @@ LOCAL_HOSTS = ("127.0.0.1", "localhost")
 
 
 class SetupCodes:
+    """One-time setup codes, and what happened to the latest one.
+
+    `progress` lets the agent that sent the link tell "not opened yet" from
+    "opened but not submitted", "rejected by OpenRouter" and "expired", without
+    ever seeing the key: issued -> opened -> rejected (with the reason) | saved.
+    """
+
     def __init__(self):
         self.codes = {}
         self.lock = threading.Lock()
+        self.latest = None
+        self.progress = None
 
     def issue(self):
         code = secrets.token_urlsafe(16)
@@ -40,7 +49,28 @@ class SetupCodes:
             now = time.time()
             self.codes = {key: expiry for key, expiry in self.codes.items() if expiry > now}
             self.codes[code] = now + CODE_SECONDS
+            self.latest = code
+            self.progress = {"state": "issued", "expires_in_seconds": CODE_SECONDS}
         return code
+
+    def note(self, code, state, error=None):
+        """Record what happened to `code`, if it is the latest one."""
+        with self.lock:
+            if code == self.latest:
+                self.progress = {"state": state, "error": error} if error else {"state": state}
+
+    def status(self):
+        with self.lock:
+            if self.progress is None:
+                return None
+            progress = dict(self.progress)
+            expiry = self.codes.get(self.latest)
+            if progress["state"] != "saved":
+                if expiry is None or expiry <= time.time():
+                    progress["state"] = "expired"
+                else:
+                    progress["expires_in_seconds"] = int(expiry - time.time())
+            return progress
 
     def valid(self, code):
         with self.lock:
