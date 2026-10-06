@@ -82,6 +82,7 @@ jobs:
           Write-Host $out
           if ($out -notmatch "CLOAKROOM_NEEDS: docker") { throw "expected CLOAKROOM_NEEDS: docker" }
           if (Test-Path (Join-Path $HOME ".cloakroom\app")) { throw "installed something without consent" }
+          exit 0  # the child installer's exit code is the expected stop, not this check's result
       - name: Asks for Linux containers when Docker runs Windows containers
         shell: powershell
         run: |
@@ -89,3 +90,4 @@ jobs:
           $out = powershell -NoProfile -Command "irm https://raw.githubusercontent.com/$env:GITHUB_REPOSITORY/$env:GITHUB_SHA/install.ps1 | iex" 2>&1 | Out-String
           Write-Host $out
           if ($out -notmatch "Switch to Linux containers") { throw "expected the Linux containers message" }
+          exit 0
