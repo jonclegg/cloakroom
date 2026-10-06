@@ -10,6 +10,7 @@ import json
 import os
 import random
 import time
+import urllib.error
 import urllib.request
 import weakref
 from urllib.parse import parse_qs, urlparse
@@ -61,8 +62,27 @@ def send_input(page, actions):
     request = urllib.request.Request(
         _input_url(), data=body, headers={"Content-Type": "application/json"}, method="POST",
     )
-    with urllib.request.urlopen(request, timeout=120) as response:
-        return json.load(response)
+    try:
+        with urllib.request.urlopen(request, timeout=120) as response:
+            return json.load(response)
+    except urllib.error.HTTPError as error:
+        raise RuntimeError(f"native input failed ({error.code}): {error.read().decode()[:300]}") from None
+
+###############################################################################
+
+def reset_zoom(page):
+    """Put a zoomed page back to 100%, the way a person would (Ctrl+0).
+
+    Chrome remembers zoom per site, so one stray Ctrl+wheel keeps a site zoomed
+    for good, and CSS-scale screenshots of a zoomed page come out shrunken.
+    """
+    session = page.context.new_cdp_session(page)
+    zoom = session.send("Page.getLayoutMetrics")["cssVisualViewport"].get("zoom", 1)
+    session.detach()
+    if zoom != 1:
+        send_input(page, [{"type": "key", "keys": "ctrl+0"}])
+        pause(0.4, 0.8)
+    return zoom
 
 ###############################################################################
 

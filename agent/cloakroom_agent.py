@@ -436,6 +436,7 @@ def execute(page, d, page_factory):
 
 def run(page, goal, model, max_steps, shots_dir):
     history = []
+    humanize.reset_zoom(page)
     for step in range(max_steps):
         shot = os.path.join(shots_dir, f"step-{step:02d}.png")
         if not safe_screenshot(page, shot):
