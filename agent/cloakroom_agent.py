@@ -23,7 +23,6 @@ import argparse
 import base64
 import json
 import os
-import random
 import sys
 import time
 import urllib.error
@@ -349,52 +348,20 @@ def decide(page, shot, goal, history, model):
 
 def do_hold(page, x, y, ms):
     """Press and hold. Returns the real elapsed milliseconds."""
-    humanize.human_move(page, x, y)
-    humanize.pause(0.15, 0.3)
-    page.mouse.move(x, y)
-    page.mouse.down()
     start = time.time()
-    while (time.time() - start) * 1000 < ms:
-        time.sleep(0.05)
-    page.mouse.up()
+    humanize.hold(page, x, y, ms)
     elapsed = int((time.time() - start) * 1000)
     humanize.pause(1.0, 1.8)
     return elapsed
 
 
-def do_drag(page, x, y, x2, y2, ms=900):
+def do_drag(page, x, y, x2, y2):
     """Press at (x,y), drag to (x2,y2) with human-like easing, release.
 
     Slider challenges (Geetest, Alibaba, PerimeterX) score the path, not just the
-    endpoints: a straight teleport is rejected. This eases in and out, overshoots
-    slightly, then settles.
+    endpoints: a straight teleport is rejected.
     """
-    humanize.human_move(page, x, y)
-    humanize.pause(0.12, 0.25)
-    page.mouse.move(x, y)
-    page.mouse.down()
-    humanize.pause(0.05, 0.15)
-
-    steps = random.randint(28, 45)
-    overshoot = random.uniform(3, 9)
-    for i in range(1, steps + 1):
-        t = i / steps
-        # ease-in-out
-        eased = 3 * t * t - 2 * t * t * t
-        px = x + (x2 - x) * eased
-        py = y + (y2 - y) * eased
-        if i == steps:
-            px += overshoot
-        px += random.uniform(-1.2, 1.2)
-        py += random.uniform(-1.2, 1.2)
-        page.mouse.move(px, py)
-        time.sleep(random.uniform(0.008, 0.022))
-    # settle back onto the target
-    for settle in (0.6, 0.3, 0.1, 0.0):
-        page.mouse.move(x2 + overshoot * settle, y2)
-        time.sleep(random.uniform(0.03, 0.07))
-    humanize.pause(0.1, 0.2)
-    page.mouse.up()
+    humanize.drag(page, x, y, x2, y2)
     humanize.pause(1.0, 1.8)
     return f"drag ({x},{y})->({x2},{y2})"
 
@@ -420,28 +387,25 @@ def execute(page, d, page_factory):
         return f"hold ({x},{y}) {held}ms", None
 
     if action == "click" and x is not None and y is not None:
-        humanize.human_move(page, x, y)
-        humanize.pause(0.08, 0.22)
-        page.mouse.click(x, y)
+        humanize.click_at(page, x, y)
         humanize.pause(0.6, 1.2)
         return f"click ({x},{y})", None
 
     if action == "type" and text:
         if x is not None and y is not None:
-            humanize.human_move(page, x, y)
-            page.mouse.click(x, y)
+            humanize.click_at(page, x, y)
             humanize.pause(0.2, 0.4)
         humanize.human_type(page, text)
         humanize.pause(0.3, 0.7)
         return f"type {text!r}", None
 
     if action == "press" and text:
-        page.keyboard.press(text)
+        humanize.press(page, text)
         humanize.pause(0.6, 1.2)
         return f"press {text}", None
 
     if action == "scroll":
-        page.mouse.wheel(0, int(d.get("amount") or 600))
+        humanize.scroll(page, int(d.get("amount") or 600))
         humanize.pause(0.6, 1.2)
         return "scroll", None
 

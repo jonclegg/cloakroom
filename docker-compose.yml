@@ -1,9 +1,22 @@
 name: cloakroom
 
 services:
+  # Base image only: never started. CloakBrowser from the jonclegg fork, which adds
+  # a persistent default seed, process limits, GeoIP without a proxy, coherent
+  # window geometry and hardware, and native X11 input. CLOAKBROWSER_SOURCE points
+  # the build at a local checkout instead.
+  cloakbrowser:
+    build:
+      context: ${CLOAKBROWSER_SOURCE:-https://github.com/jonclegg/CloakBrowser.git#cloakroom-fixes}
+    image: cloakroom-cloakbrowser:local
+    entrypoint: ["true"]
+    restart: "no"
+
   cloakroom:
     build:
       context: ./image
+      additional_contexts:
+        cloakbrowser: service:cloakbrowser
     image: cloakroom:local
     container_name: cloakroom
     hostname: cloakroom

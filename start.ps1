@@ -34,9 +34,9 @@ if (-not (Test-Path .env)) {
     Write-Host "Created .env with default settings (edit it later to add a license key or proxy)."
 }
 
-Write-Host "1/3 Downloading the latest CloakBrowser image (first time can take a few minutes)..."
+Write-Host "1/3 Building CloakBrowser (first time can take a few minutes)..."
 Invoke-Docker compose pull hello --quiet
-Invoke-Docker compose build --pull --quiet cloakroom
+Invoke-Docker compose build --quiet cloakroom
 
 Write-Host "2/3 Starting the browser..."
 Invoke-Docker compose up -d --force-recreate cloakroom
