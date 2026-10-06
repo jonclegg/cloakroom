@@ -96,6 +96,26 @@ if [ ! -f .env ]; then
   echo "Created .env with default settings (edit it later to add a license key or proxy)."
 fi
 
+# A UTC clock on a US residential IP is a bot tell. The container has no timezone
+# of its own, and cloakserve only derives one from GeoIP when a proxy is set, so
+# the browser would otherwise report UTC while the traffic leaves from, say,
+# America/Chicago. Match the host unless the user set one.
+if ! grep -qE '^CLOAKROOM_TIMEZONE=..*' .env 2>/dev/null; then
+  host_tz=""
+  if [ -L /etc/localtime ]; then
+    host_tz="$(readlink /etc/localtime | sed -n 's#.*/zoneinfo/##p')"
+  fi
+  [ -n "$host_tz" ] || host_tz="$(cat /etc/timezone 2>/dev/null || true)"
+  if [ -n "$host_tz" ]; then
+    if grep -qE '^CLOAKROOM_TIMEZONE=' .env 2>/dev/null; then
+      sed -i.bak "s#^CLOAKROOM_TIMEZONE=.*#CLOAKROOM_TIMEZONE=${host_tz}#" .env && rm -f .env.bak
+    else
+      printf '\n# Detected from this computer so the browser clock matches the IP.\nCLOAKROOM_TIMEZONE=%s\n' "$host_tz" >> .env
+    fi
+    echo "Timezone: ${host_tz} (from this computer)"
+  fi
+fi
+
 echo "1/3 Downloading the latest CloakBrowser image (first time can take a few minutes)..."
 docker compose pull hello --quiet
 docker compose build --pull --quiet cloakroom

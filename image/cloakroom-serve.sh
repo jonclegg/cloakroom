@@ -20,6 +20,12 @@ args=(--start-maximized --data-dir="$DATA_DIR")
 if [ -n "${CLOAKROOM_FINGERPRINT_SEED:-}" ]; then
   args+=(--fingerprint="$CLOAKROOM_FINGERPRINT_SEED")
 fi
+# Without this the browser reports UTC. A UTC clock next to a US residential IP is
+# a classic automation tell, and cloakserve only derives a timezone from GeoIP when
+# a proxy is set. Match the host instead.
+if [ -n "${CLOAKROOM_TIMEZONE:-}" ]; then
+  args+=(--fingerprint-timezone="$CLOAKROOM_TIMEZONE")
+fi
 if [ -n "${CLOAKROOM_PROXY:-}" ]; then
   args+=(--proxy-server="$CLOAKROOM_PROXY")
 fi
