@@ -31,7 +31,7 @@ The browser keeps running in the background (as long as OrbStack or Docker Engin
    | --- | --- | --- |
    | `docker_running` | `false` | Run `cloakroom start`. On a Mac with OrbStack that opens OrbStack; otherwise it uses the running Docker engine (Docker Desktop, Colima). If there's no engine at all, re-run the installer: it says exactly what to install. On Linux, Docker Engine must already be installed and `docker info` must succeed. |
    | `ready` | `false` | Run `cloakroom start` (first run downloads ~1 GB; allow up to 10 minutes). |
-   | `openrouter_key` | `false` | Needed only for `cloakroom chat`. Run `cloakroom key --json` and send the user the `setup_url`; they paste the key into that page. See [The OpenRouter key](#the-openrouter-key). Never ask for the key in chat. |
+   | `openrouter_key` | `false` | Needed only for `cloakroom chat`. Run `cloakroom key`: it opens the setup page on this computer and waits until the key is saved (it says if OpenRouter rejected it or the link expired). Away from the computer: `cloakroom key --in-browser` plus `cloakroom share`. See [The OpenRouter key](#the-openrouter-key). Never ask for the key in chat. |
 
 2. **Drive the browser over CDP**
 

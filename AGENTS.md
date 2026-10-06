@@ -36,13 +36,21 @@ $env:CLOAKROOM_INSTALL_DOCKER = "yes"; irm https://raw.githubusercontent.com/jon
 
 If it stops with `CLOAKROOM_NEEDS: user` (exit code 4), it needs something only the user can do. Examples: typing a sudo password in their own terminal, finishing Docker Desktop's first-run setup, or logging out and back in. Relay the message as it is, wait until they say it's done, then run the installer again.
 
-**4. The OpenRouter key.** Cloakroom drives the browser with DeepSeek through OpenRouter, so it needs the user's key. **Never ask for the key in chat.** Run `cloakroom key`. It opens a page on their computer where they paste it, and Cloakroom checks it with OpenRouter. Tell them to create a key at https://openrouter.ai/keys if they don't have one, and to paste it into that page. Then wait until `cloakroom status --json` shows `"openrouter_key": true`.
+**4. The OpenRouter key.** Cloakroom drives the browser with DeepSeek through OpenRouter, so it needs the user's key. **Never ask for the key in chat.** Run `cloakroom key`. It opens a local setup page in this computer's browser (it also prints the link) and then waits. Tell the user to paste their key into that page and click the button. If they don't have a key, they create one at https://openrouter.ai/keys. The command returns when the key is saved, which means OpenRouter accepted it. It also reports what happens along the way:
+
+- **The page opened but nothing was submitted.** Remind the user to click the button.
+- **OpenRouter rejected the key.** The page stays open for another try. Relay the reason.
+- **The link expired** (after 15 minutes). Run `cloakroom key` again.
+
+The page answers only on this computer (`127.0.0.1`). If the user isn't at this computer, or it has no screen, run `cloakroom key --in-browser` and `cloakroom share`. Send them the share link, and they paste the key into the page in Cloakroom's own browser, through the viewer. For a link without waiting, use `cloakroom key --json`. `cloakroom status --json` shows how far it has got under `key_setup`.
 
 **5. Show it working.** Run `cloakroom smoke`. Cloakroom enters Amazon, Walmart, Target and Best Buy from Bing, works any bot check, takes a screenshot of each, and opens a report. Tell the user how many it reached, and show them the screenshots: `cloakroom smoke --json` lists each one's `host_screenshot` path.
 
-**6. Done.** Tell them it's ready, how to watch the browser (http://127.0.0.1:6080), and that they can now ask you to do things on sites "with Cloakroom".
+**6. Done.** Tell them it's ready, how to watch the browser (the `viewer_url` from `cloakroom status --json`, normally http://127.0.0.1:6080), and that they can now ask you to do things on sites "with Cloakroom".
 
-On Windows there is no `cloakroom` command on the host. Use `docker exec cloakroom cloakroom <command>` for `status`, `key`, `smoke`, `chat`, `run` and `notes`. Start and stop with `~\.cloakroom\app\start.ps1` and `stop.ps1`. The `key` command prints the link; open it for the user with `Start-Process <url>`.
+The ports in these instructions (9222 CDP, 6080 viewer, 8423 API) are the defaults. If something else on the computer already uses them, the user sets other ports in `~/.cloakroom/app/.env`. `cloakroom status --json` always reports the real URLs.
+
+On Windows there is no `cloakroom` command on the host. Use `docker exec cloakroom cloakroom <command>` for `status`, `key`, `smoke`, `chat`, `run` and `notes`. Start and stop with `~\.cloakroom\app\start.ps1` and `stop.ps1`. For the key, run `docker exec cloakroom cloakroom key --json`, open the `setup_url` for the user with `Start-Process <url>`, then wait on that same link with `docker exec cloakroom cloakroom key --watch`.
 
 ## Using Cloakroom
 

@@ -181,6 +181,7 @@ class Cloakroom:
             "browser_connected": bool(self.browser and self.browser.is_connected()),
             "model": agent.DEFAULT_MODEL,
             "openrouter_key": self._has_key(),
+            "key_setup": self.setup_codes.status(),
             "queue_depth": self.queue.qsize(),
             "running": self.current.id if self.current else None,
             "sessions": [
@@ -363,6 +364,7 @@ def make_handler(cloakroom, token):
                 code = (parse_qs(urlparse(self.path).query).get("code") or [""])[0]
                 if not cloakroom.setup_codes.valid(code):
                     return self._send_html(410, key_setup.expired_page())
+                cloakroom.setup_codes.note(code, "opened")
                 return self._send_html(200, key_setup.form_page(code))
             length = int(self.headers.get("Content-Length") or 0)
             form = parse_qs(self.rfile.read(length).decode())
@@ -373,8 +375,10 @@ def make_handler(cloakroom, token):
             try:
                 info = key_setup.check_key(key)
             except ValueError as exc:
+                cloakroom.setup_codes.note(code, "rejected", str(exc))
                 return self._send_html(400, key_setup.form_page(code, str(exc)))
             key_setup.save_key(key)
+            cloakroom.setup_codes.note(code, "saved")
             cloakroom.setup_codes.consume(code)
             print("openrouter key saved", flush=True)
             return self._send_html(200, key_setup.saved_page(info))
@@ -386,6 +390,10 @@ def make_handler(cloakroom, token):
             parts = self._parts()
             if parts == ["v1", "health"]:
                 return self._send(200, {"ok": True})
+            if parts == ["favicon.ico"]:
+                self.send_response(204)
+                self.end_headers()
+                return None
             if parts == ["setup"]:
                 return self._setup("GET")
             if not self._authorized():

@@ -10,6 +10,7 @@ import argparse
 import json
 import os
 import sys
+import time
 import urllib.error
 import urllib.request
 import webbrowser
@@ -56,6 +57,34 @@ def print_run(run):
     print(f"session: {run['session']}   (continue with: cloakroom chat --session {run['session']} \"...\")")
 
 
+def wait_for_key(link, in_browser):
+    """Print the setup link, then report what happens to it until it is settled."""
+    if in_browser:
+        print("Opened the key page in Cloakroom's browser; the user pastes the key there "
+              "through the viewer (or a `cloakroom share` link).", flush=True)
+    elif link:
+        print(f"Paste the OpenRouter key into: {link['setup_url']}", flush=True)
+    print("Waiting for the key (the link lasts 15 minutes)...", flush=True)
+    last = None
+    while True:
+        progress = call("GET", "/v1/status")["key_setup"] or {}
+        state = progress.get("state")
+        if state != last:
+            if state == "opened":
+                print("The page is open; waiting for the key to be submitted.", flush=True)
+            elif state == "rejected":
+                print(f"OpenRouter rejected that key: {progress.get('error')} "
+                      "The page is still open for another try.", flush=True)
+            elif state == "saved":
+                print("Key saved. OpenRouter accepted it.")
+                return 0
+            elif state == "expired":
+                print("The link expired before a key was saved. Run `cloakroom key --wait` for a new one.")
+                return 1
+            last = state
+        time.sleep(3)
+
+
 def main():
     parser = argparse.ArgumentParser(prog="cloakroom")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -81,6 +110,10 @@ def main():
     key.add_argument("--in-browser", action="store_true",
                      help="open it in Cloakroom's own browser, for use through the viewer")
     key.add_argument("--json", action="store_true", help="print the link instead of opening it")
+    key.add_argument("--wait", action="store_true",
+                     help="after printing the link, wait until the key is saved, rejected, or the link expires")
+    key.add_argument("--watch", action="store_true",
+                     help="wait on the link already issued (by `key --json`) without making a new one")
 
     smoke = commands.add_parser("smoke", help="reach a few big sites and screenshot them")
     smoke.add_argument("sites", nargs="*", help="domains (default: amazon.com walmart.com target.com bestbuy.com)")
@@ -122,10 +155,14 @@ def main():
         return 0
 
     if args.command == "key":
+        if args.watch:
+            return wait_for_key(None, False)
         link = call("POST", "/v1/setup-link", {"in_browser": args.in_browser})
-        if args.json:
+        if args.json and not args.wait:
             print(json.dumps(link, indent=2))
             return 0
+        if args.wait:
+            return wait_for_key(link, args.in_browser)
         if args.in_browser:
             print("Opened the key page in Cloakroom's browser. Paste the key there "
                   "(through the viewer, or `cloakroom share` from a phone).")

@@ -25,8 +25,10 @@ Usage: cloakroom <command> [--json]
   run <id>       A run's steps, reply, and saved files.
   cancel <id>    Stop a run.
   notes [site]   What Cloakroom has learned about each site.
-  key            Open a page to paste the OpenRouter key into (never into chat).
+  key            Open a page to paste the OpenRouter key into (never into chat),
+                 then wait until it is saved, rejected, or the link expires.
                  --in-browser opens it in Cloakroom's browser, for the viewer.
+                 --json prints the link and returns at once.
   smoke [sites]  Reach a few big sites from Bing and open a report with
                  screenshots (default: amazon walmart target bestbuy).
 
@@ -83,14 +85,18 @@ case "$command" in
   unshare) exec bash "${CLOAKROOM_ROOT}/share.sh" stop "$@" ;;
   key)
     require_running
-    if [ "${1:-}" = --json ] || [ "${1:-}" = --in-browser ]; then
+    if [ "${1:-}" = --json ]; then
       exec docker exec cloakroom cloakroom key "$@"
     fi
-    link="$(docker exec cloakroom cloakroom key --json)"
-    url="$(printf '%s' "$link" | sed -n 's/.*"setup_url": *"\([^"]*\)".*/\1/p')"
-    open_on_host "$url" || true
-    echo "Paste the OpenRouter key into: ${url}"
-    echo "The link works once and lasts 15 minutes."
+    # Open the page on this computer, then report what happens to it: saved,
+    # rejected by OpenRouter (the page stays open for another try), or expired.
+    docker exec cloakroom cloakroom key --wait "$@" | while IFS= read -r line; do
+      printf '%s\n' "$line"
+      case "$line" in
+        "Paste the OpenRouter key into: "*) open_on_host "${line#Paste the OpenRouter key into: }" || true ;;
+      esac
+    done
+    exit "${PIPESTATUS[0]}"
     ;;
   smoke)
     require_running
