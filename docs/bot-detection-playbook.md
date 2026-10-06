@@ -166,21 +166,30 @@ Detection only so far. See the per-site log for what was observed.
 
 ### Confirmed: challenge found and defeated
 
-| # | Site | Vendor / type | Detected as | Defeated by | Evidence |
+Nine sites. Six of them are PerimeterX or Cloudflare — the two checks that
+account for most of what actually blocks this browser.
+
+| # | Site | Vendor / type | Detected as | Defeated by | Where it appeared |
 | --- | --- | --- | --- | --- | --- |
-| 1 | walmart.com | PerimeterX press-and-hold | `press_and_hold` | `hold` 8.0–10.1 s at (659,270) / (664,378); seen at both `/blocked?url=…` and as an inline overlay | `walmart-blocked.png` |
-| 2 | cars.com | Cloudflare interstitial + Turnstile | `cloudflare_interstitial` | passed; the real homepage then loaded. Reproduced on a fresh browser identity | `cars_com-*-01-landed.png` |
-| 3 | edmunds.com | Akamai 403 page | `access_denied` | the block gave way and the real homepage loaded | `edmunds_com-*-01-landed.png` |
-| 4 | stubhub.com | reCAPTCHA | `recaptcha` | humanized click | `stubhub_com-*-01-landed.png` |
+| 1 | walmart.com | PerimeterX press-and-hold | `press_and_hold` | `hold` 8.0–10.1 s at the button centre | homepage, then `/blocked?url=…`, then an inline overlay |
+| 2 | samsclub.com | PerimeterX press-and-hold ("Let us know you're not a robot") | `press_and_hold`, `robot_or_human` | `hold` | site search results |
+| 3 | bloomberg.com | PerimeterX press-and-hold | `perimeterx`, `press_and_hold` | `hold` | homepage |
+| 4 | truecar.com | PerimeterX press-and-hold ("Before we continue…") | `perimeterx`, `press_and_hold` | `hold` | site search results |
+| 5 | cars.com | Cloudflare interstitial + Turnstile | `cloudflare_interstitial` | passed; real homepage then loaded | homepage |
+| 6 | crunchbase.com | Cloudflare interstitial | `cloudflare_interstitial` | passed | **site search results, not the homepage** |
+| 7 | edmunds.com | Akamai 403 | `access_denied` | block gave way, real homepage loaded | homepage |
+| 8 | kohls.com | Akamai `Access Denied` | `access_denied` | block gave way on a later attempt | homepage |
+| 9 | stubhub.com | reCAPTCHA | `recaptcha` | humanized click | homepage |
 
 ### Confirmed: challenge found, not defeated
 
 | Site | Vendor / type | Why it failed |
 | --- | --- | --- |
-| linkedin.com | Cloudflare hard block | Title `Attention Required! | Cloudflare`. This is not the solvable interstitial — there is no widget, no checkbox, nothing to interact with. It is an IP/reputation verdict. |
-| kohls.com | Akamai `Access Denied` | Bare 403. Sometimes resolves on a retry (as Edmunds did), sometimes not. |
-| wayfair.com | PerimeterX press-and-hold | The same check Cloakroom beats on Walmart. Not cleared here — the run had already exhausted the browser (see below), so the page was not healthy when the hold fired. |
-| expedia.com | DataDome | Passive. No puzzle to solve; it decides on fingerprint. |
+| linkedin.com | Cloudflare hard block | Title `Attention Required! | Cloudflare`. Not the solvable interstitial — no widget, no checkbox, nothing to interact with. An IP/reputation verdict. |
+| wayfair.com | PerimeterX press-and-hold | **The hold works and still loses.** The widget confirms "Human Challenge completed, please wait…", then the next page is `Access to this page has been denied`. Clearing the interaction is not the same as being authorised. |
+| enterprise.com | reCAPTCHA | Widget stays present. Its real page title loads underneath, so this may be a passive v3 badge rather than a real block. |
+| expedia.com | DataDome | Serves a "Bot or Not?" interstitial. Passive: it decides on fingerprint, and the solve hangs. |
+| apartments.com, opentable.com | Akamai `Access Denied` | Bare 403s that did not give way. |
 
 ---
 
@@ -205,44 +214,53 @@ That is the lever for reproducible testing. Use it.
 
 CloakBrowser keeps a browser alive per fingerprint identity, and disconnecting
 over CDP does not reap it. A sweep that used a new identity per site left
-**627 Chrome processes** in the container. The CDP endpoint then started
-answering `502` to every new connection, and 25 sites were never probed at all.
+**627 Chrome processes** in the container. The CDP endpoint then answered `502`
+to every new connection and 25 sites were never probed at all. `docker exec
+cloakroom ps aux | grep -c chrome` shows the pile-up; `cloakroom stop && start`
+reclaims it (627 → 10) and the saved profile survives.
 
-Symptoms to watch for: `Unexpected status 502 when connecting to
-http://127.0.0.1:9222/json/version`. `docker exec cloakroom ps aux | grep -c
-chrome` shows the pile-up. `cloakroom stop && cloakroom start` reclaims it
-(627 → 10), and the saved profile survives the restart.
+For sites the browser has never visited, the **default identity is just as
+fresh** and does not leak. Prefer it; reach for a new fingerprint only to re-arm
+a challenge on a site that has already cleared you.
 
-Practical shape: use a fresh identity, but batch the work and restart the
-container between batches. Do not spawn one identity per site indefinitely.
+### A failed screenshot silently lost winnable challenges
 
-### A failing re-run must not erase a finding
+This was the single most expensive bug. PerimeterX overlays navigate as they
+arm, which destroys the page context mid-capture. `safe_screenshot` retried once
+and then the whole solve returned `screenshot failed` **without ever attempting
+the hold**. Sam's Club and TrueCar were both recorded as failures this way and
+both cleared on the retry once the capture retried persistently. Any negative
+result on a press-and-hold site is suspect until the capture succeeded.
 
-The first harness overwrote each site's record on re-probe. Sites that had shown
-a challenge but were re-run during the resource exhaustion were recorded as
-`connect_failed`, losing the finding. The harness now keeps a
-`challenges_seen` history and never downgrades a past success.
+### Retrying converts failures
+
+Several sites only cleared on a second or third attempt: TrueCar and Kohl's both
+did. A single pass understates the result — re-run `hung`, `not_defeated`, and
+`error` sites rather than writing them off.
 
 ### Homepages are the easy case
 
-Of 63 sites probed at the homepage, only 7 showed any bot detection. Search,
-listing, and product pages are where sites actually turn bots away. The harness
-has a `--deep` mode that drives the site's own search box for exactly this
-reason; it had not been exercised before the run ran out of resources.
+Of 63 homepage probes, only 7 showed detection. Crunchbase's Cloudflare
+interstitial appeared **only** when the probe drove its own search box to a
+results page. Site search, listing, and product pages are where the checks live.
+TrueCar and Sam's Club also surfaced theirs on search pages, not homepages.
+
+### One hostile page could stall everything
+
+Playwright's sync API blocks the main thread in a way `signal.alarm` cannot
+interrupt, so a dead page hung the sweep indefinitely. Running one site per
+subprocess with a hard kill is the only reliable bound.
 
 ### Hard blocks are not a captcha problem
 
-`Attention Required!`, a bare `Access Denied`, and DataDome's silent refusal have
-no interactive element. No amount of clicking, dragging, or holding gets through
-them. They resolve only with a different browser identity or IP — which is what
-the fresh-fingerprint trick above is for. Distinguishing these from solvable
-challenges early saved ~10 minutes per site; the harness now fails them fast.
+`Attention Required!`, a bare `Access Denied`, and DataDome's refusal have no
+interactive element. No amount of clicking or holding gets through them — only a
+different browser identity or IP. Detecting them early saved ~10 minutes per
+site.
 
 ---
 
 ## Part 5 — What did not work
-
-Recorded so it isn't retried.
 
 - Scanning page HTML for vendor names. Normal sites mention `recaptcha` and
   `geetest` in their JS bundles; Cars.com's homepage reported both while showing
@@ -259,17 +277,12 @@ Recorded so it isn't retried.
 
 ## Status
 
-The hunt is **not complete**. At the time of writing: 63 sites probed, 7 showed
-bot detection, 4 defeated, 3 hard-blocked or unresolved, and 25 never probed
-because the browser ran out of processes. The target is 20 confirmed defeats.
+**9 of 20 confirmed defeats.** 63 sites probed; 12 showed bot detection; 9
+defeated.
 
-Next steps, in order of expected yield:
+The remaining sites are mostly ones that show nothing on the homepage. The deep
+search-page pass is still working through them; it found Crunchbase's Cloudflare
+check where the homepage showed none, so it is the right lever, but the yield so
+far is roughly one challenge per ten sites.
 
-1. Re-probe the 25 sites that hit `connect_failed`, in batches with a container
-   restart between them.
-2. Run the `--deep` pass, which drives each site's own search box — homepages
-   only produced a 11% detection rate.
-3. Retry the soft failures (kohls, wayfair) on a healthy browser.
-4. Only then treat the hard blocks (linkedin, expedia) as out of reach, and
-   retry those on a fresh identity rather than writing them off.
 

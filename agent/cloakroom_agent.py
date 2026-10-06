@@ -475,10 +475,15 @@ def run(page, goal, model, max_steps, shots_dir):
     for step in range(max_steps):
         shot = os.path.join(shots_dir, f"step-{step:02d}.png")
         if not safe_screenshot(page, shot):
-            # A challenge that is mid-navigation destroys the page context; give
-            # it a beat and try again rather than aborting the whole run.
-            humanize.pause(2.0, 3.0)
-            if not safe_screenshot(page, shot):
+            # A challenge that is mid-navigation destroys the page context. A
+            # PerimeterX overlay in particular can navigate as it arms, and a
+            # single retry is not enough: aborting here meant the hold never ran
+            # and a beatable challenge was recorded as a failure. Keep trying.
+            for wait in (2.5, 4.0, 6.0, 8.0):
+                humanize.pause(wait, wait + 1.5)
+                if safe_screenshot(page, shot):
+                    break
+            else:
                 return history, "screenshot failed", page
 
         try:
