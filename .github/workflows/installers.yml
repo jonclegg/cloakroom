@@ -1,0 +1,88 @@
+# Runs the installers the way an agent does, on each OS GitHub can host.
+#
+# Linux: a full install from this commit with the published image, then status,
+# the key page, and a smoke run (a datacenter IP draws bot checks the key-less
+# smoke cannot work, so the smoke result is reported, not required).
+# macOS: no container engine on the runner, so the installer must stop with
+# "CLOAKROOM_NEEDS: docker" (exit 3) and change nothing.
+# Windows: the same stop with no Docker on PATH; with the runner's Docker (Windows
+# containers only) it must ask to switch to Linux containers.
+name: installers
+
+on:
+  push:
+    branches: ["**"]
+    paths:
+      - "install.sh"
+      - "install.ps1"
+      - "start.sh"
+      - "start.ps1"
+      - "cloakroom"
+      - "lib.sh"
+      - "docker-compose.yml"
+      - ".github/workflows/installers.yml"
+  workflow_run:
+    workflows: [image]
+    types: [completed]
+  workflow_dispatch:
+
+jobs:
+  linux:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-24.04
+    env:
+      REF: ${{ github.event.workflow_run.head_sha || github.sha }}
+      BRANCH: ${{ github.event.workflow_run.head_branch || github.ref_name }}
+    steps:
+      - name: Install from this commit
+        run: |
+          tag=latest; [ "$BRANCH" = main ] || tag="$(printf '%s' "$BRANCH" | tr -c 'A-Za-z0-9_.-' '-')"
+          curl -fsSL "https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/${REF}/install.sh" \
+            | CLOAKROOM_TARBALL_URL="https://github.com/${GITHUB_REPOSITORY}/archive/${REF}.tar.gz" \
+              CLOAKROOM_IMAGE="ghcr.io/jonclegg/cloakroom:${tag}" sh
+      - name: Status
+        run: ~/.cloakroom/app/cloakroom status --json | tee status.json && grep -q '"ready":true' status.json
+      - name: Key page answers
+        run: |
+          url="$(~/.cloakroom/app/cloakroom key --json | sed -n 's/.*"setup_url": *"\([^"]*\)".*/\1/p')"
+          test "$(curl -s -o /dev/null -w '%{http_code}' "$url")" = 200
+      - name: Smoke (reported, not required)
+        continue-on-error: true
+        run: ~/.cloakroom/app/cloakroom smoke --json | tee smoke.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: linux-smoke
+          path: ~/.cloakroom/data/smoke/
+          if-no-files-found: ignore
+
+  macos:
+    runs-on: macos-15
+    steps:
+      - name: Stops and asks before installing a container engine
+        run: |
+          set +e
+          out="$(curl -fsSL "https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/${GITHUB_SHA}/install.sh" | sh 2>&1)"
+          code=$?
+          echo "$out"
+          test "$code" = 3
+          echo "$out" | grep -q '^CLOAKROOM_NEEDS: docker'
+          test ! -d ~/.cloakroom/app
+
+  windows:
+    runs-on: windows-2025
+    steps:
+      - name: Stops and asks before installing Docker Desktop (Windows PowerShell 5.1)
+        shell: powershell
+        run: |
+          $env:Path = ($env:Path -split ";" | Where-Object { -not (Test-Path (Join-Path $_ "docker.exe")) }) -join ";"
+          $out = powershell -NoProfile -Command "irm https://raw.githubusercontent.com/$env:GITHUB_REPOSITORY/$env:GITHUB_SHA/install.ps1 | iex" 2>&1 | Out-String
+          Write-Host $out
+          if ($out -notmatch "CLOAKROOM_NEEDS: docker") { throw "expected CLOAKROOM_NEEDS: docker" }
+          if (Test-Path (Join-Path $HOME ".cloakroom\app")) { throw "installed something without consent" }
+      - name: Asks for Linux containers when Docker runs Windows containers
+        shell: powershell
+        run: |
+          $out = powershell -NoProfile -Command "irm https://raw.githubusercontent.com/$env:GITHUB_REPOSITORY/$env:GITHUB_SHA/install.ps1 | iex" 2>&1 | Out-String
+          Write-Host $out
+          if ($out -notmatch "Switch to Linux containers") { throw "expected the Linux containers message" }
