@@ -46,6 +46,7 @@ BLOCK_PATTERNS = {
     "robot_or_human": r"robot or human",
     "access_denied": r"access denied|reference\s*#\s*\d",
     "human_verification": r"confirm you are human|human verification",
+    "access_restricted": r"access (is )?temporarily restricted|unusual activity from your (device|network)",
     "blocked_url": r"/blocked|/sorry/|/challenge|/cdn-cgi/challenge",
 }
 
