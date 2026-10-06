@@ -45,6 +45,7 @@ BLOCK_PATTERNS = {
     "slider": r"slide to verify|drag the slider",
     "robot_or_human": r"robot or human",
     "access_denied": r"access denied|reference\s*#\s*\d",
+    "human_verification": r"confirm you are human|human verification",
     "blocked_url": r"/blocked|/sorry/|/challenge|/cdn-cgi/challenge",
 }
 
@@ -64,11 +65,13 @@ VENDOR_FRAMES = {
 
 VENDOR_WIDGETS = {
     "cloudflare_turnstile": "iframe[src*='challenges.cloudflare.com'], .cf-turnstile, #cf-chl-widget",
-    "recaptcha": "iframe[src*='recaptcha'], .g-recaptcha, #recaptcha",
+    # size=invisible is the passive v3 badge (Enterprise shows it on every page)
+    "recaptcha": "iframe[src*='recaptcha']:not([src*='size=invisible']), .g-recaptcha, #recaptcha",
     "hcaptcha": "iframe[src*='hcaptcha'], .h-captcha",
     "perimeterx": "#px-captcha",
     "geetest": ".geetest_panel, .geetest_holder, [class*='geetest_']",
     "datadome": "#datadome-captcha, [class*='datadome']",
+    "aws_waf": "awswaf-captcha, iframe[src*='awswaf']",
 }
 
 INTERSTITIAL_TEXT = (

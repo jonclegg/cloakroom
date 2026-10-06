@@ -24,6 +24,11 @@ args=(--headless=false --geoip --data-dir="$DATA_DIR")
 if [ -n "${CLOAKROOM_FINGERPRINT_SEED:-}" ]; then
   args+=(--fingerprint="$CLOAKROOM_FINGERPRINT_SEED")
 fi
+if [ "${CLOAKROOM_PERSONA:-windows}" = "macos" ]; then
+  # Host fonts are mounted under /usr/local/share/fonts by docker-compose.mac.yml
+  fc-cache -f >/dev/null
+  args+=(--fingerprint-platform=macos --force-device-scale-factor=2)
+fi
 if [ -n "${CLOAKROOM_PROXY:-}" ]; then
   args+=(--proxy-server="$CLOAKROOM_PROXY")
 fi

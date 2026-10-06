@@ -96,6 +96,12 @@ if [ ! -f .env ]; then
   echo "Created .env with default settings (edit it later to add a license key or proxy)."
 fi
 
+# On a Mac, present the browser as a Mac (docker-compose.mac.yml). Compose reads
+# COMPOSE_FILE from .env, so every later compose command picks it up too.
+if [ "$(uname -s)" = "Darwin" ] && ! grep -qE '^COMPOSE_FILE=' .env; then
+  printf '\n# Set by start.sh on a Mac: macOS persona, Retina screen, and Mac fonts.\nCOMPOSE_FILE=docker-compose.yml:docker-compose.mac.yml\n' >> .env
+fi
+
 echo "1/3 Building CloakBrowser (first time can take a few minutes)..."
 docker compose pull hello --quiet
 docker compose build --quiet cloakroom
