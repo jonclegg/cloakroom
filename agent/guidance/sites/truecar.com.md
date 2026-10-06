@@ -1,0 +1,1 @@
+- PerimeterX press-and-hold, often only after you search. `hold` clears it; it can take a second attempt.

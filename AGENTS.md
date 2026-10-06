@@ -7,19 +7,24 @@ Short version:
 ```bash
 cloakroom status --json          # or ./cloakroom status --json from the repo
 cloakroom start                  # if not ready
+cloakroom chat "<message>"       # Cloakroom drives the browser with DeepSeek and replies
 cloakroom share --json           # phone viewer; send the url immediately
 cloakroom unshare                # stop the share when they are done
 ```
 
 Drive pages with Playwright: `connect_over_cdp("http://127.0.0.1:9222")`, then use `browser.contexts[0]` (the saved profile, with its cookies).
 
-**Bing-first entry and humanized input are the default.** Do not `page.goto` the target site, and do not open a search, listing, or product URL as the first navigation. Open `https://www.bing.com`, search the site name or domain, click the organic result (official domain, skip ads), then use that site's own search and links. Google-first often hits `/sorry/` from this CDP session; Bing is the gateway. Pause between actions, move the mouse in a short curve before each click, click a field before typing, and type character by character — [`examples/bing_first.py`](examples/bing_first.py) and [`examples/humanize.py`](examples/humanize.py). That avoids needless challenges. It does not bypass CAPTCHAs; the user still finishes puzzles in the viewer.
+**Or talk to Cloakroom and let it drive.** `cloakroom chat "search walmart.com for paper towels"` sends a message to the chat API inside the container: Cloakroom screenshots the page, DeepSeek (`deepseek/deepseek-v4.1-flash` over OpenRouter) picks the next action, Cloakroom executes it humanized (including press-and-hold), and it replies with a status (`done`, `needs_input`, `blocked`, `failed`). Follow up with `--session <id>` to stay in the same tab. It can read pages, save a listing's photos, and it keeps per-site notes so the next run starts knowing. It needs an OpenRouter key (see below) and `python3` on the host, nothing else. Prefer this when the task is a goal rather than a script. See [`skills/cloakroom/SKILL.md`](skills/cloakroom/SKILL.md#cloakroom-chat-cloakroom-drives-you-talk).
+
+**Bing-first entry and humanized input are the default.** Do not `page.goto` the target site, and do not open a search, listing, or product URL as the first navigation. Open `https://www.bing.com`, search the site name or domain, click the organic result (official domain, skip ads), then use that site's own search and links. Google-first often hits `/sorry/` from this CDP session; Bing is the gateway. Pause between actions, move the mouse in a short curve before each click, click a field before typing, and type character by character — [`examples/bing_first.py`](examples/bing_first.py) and [`examples/humanize.py`](examples/humanize.py). That avoids needless challenges. If one still appears, `cloakroom chat` works it.
 
 If a site asks for a two-factor code, **you** (Grok Bot or Muse) get it (for example from Messages) and type it into the page. Cloakroom does not read iMessage.
 
 When the user wants the viewer on a phone, away from home, or any remote noVNC access, run `cloakroom share` and send the HTTPS URL in the same turn. Do not ask them to approve or confirm first. The command does not prompt. The URL is a secret capability link: anyone with it can control the logged-in browser. When they are done, run `cloakroom unshare`. Do **not** use Tailscale. Do **not** Funnel or port-forward. Never expose port 9222; `cloakroom share` tunnels the viewer (6080) only. Ports 6080 and 9222 stay bound to `127.0.0.1`.
 
 Never ask the user for their password in chat. They type it in the viewer (http://127.0.0.1:6080, or the share URL).
+
+The same goes for the OpenRouter key that `cloakroom chat` needs. If `cloakroom status --json` shows `"openrouter_key": false`, run `cloakroom key --json` and send the user the `setup_url`; they paste the key into that local page. If they are away from the machine, run `cloakroom key --in-browser` and `cloakroom share`, and they paste it in the viewer. See [`skills/cloakroom/SKILL.md`](skills/cloakroom/SKILL.md#the-openrouter-key).
 
 The browser inherits the host timezone via `TZ` when `cloakroom start` can detect it, otherwise `America/Chicago`. Override with `TZ=...` in `.env`.
 

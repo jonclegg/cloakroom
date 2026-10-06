@@ -4,6 +4,9 @@ services:
   cloakroom:
     build:
       context: ./image
+      additional_contexts:
+        agent: ./agent
+        examples: ./examples
     image: cloakroom:local
     container_name: cloakroom
     hostname: cloakroom
@@ -13,17 +16,23 @@ services:
         required: false
     environment:
       TZ: ${TZ:-America/Chicago}
+      CLOAKROOM_HOST_DATA_DIR: ${CLOAKROOM_DATA_DIR:-${HOME}/.cloakroom/data}
+      CLOAKROOM_API_HOST_PORT: ${CLOAKROOM_API_PORT:-8423}
     ports:
       # Localhost only. Anyone who can reach these ports controls the browser.
       - "127.0.0.1:${CLOAKROOM_CDP_PORT:-9222}:9222"
       - "127.0.0.1:${CLOAKROOM_VIEWER_PORT:-6080}:6080"
+      - "127.0.0.1:${CLOAKROOM_API_PORT:-8423}:8423"
     # Chromium crashes tabs with Docker's default 64 MB /dev/shm.
     shm_size: 2gb
     volumes:
       - profile:/profile
       - binary-cache:/root/.cloakbrowser
+      # Notes, run logs, saved photos, the API token. A host folder, so callers
+      # can open the files directly.
+      - ${CLOAKROOM_DATA_DIR:-${HOME}/.cloakroom/data}:/data
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://localhost:9222/json/version"]
+      test: ["CMD-SHELL", "curl -fsS -o /dev/null http://localhost:9222/json/version && curl -fsS -o /dev/null http://localhost:8423/v1/health"]
       interval: 30s
       timeout: 10s
       retries: 3

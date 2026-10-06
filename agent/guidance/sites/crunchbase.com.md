@@ -1,0 +1,1 @@
+- Cloudflare interstitial, only on search results pages. It clears by itself or with the checkbox.

@@ -1,0 +1,1 @@
+- Cloudflare 'Attention Required!' hard block with nothing to click. It cleared only as the browser identity aged; do not expect to beat it in one run.

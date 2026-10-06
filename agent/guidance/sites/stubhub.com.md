@@ -1,0 +1,1 @@
+- reCAPTCHA checkbox. One click clears it.

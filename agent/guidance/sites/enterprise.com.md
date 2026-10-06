@@ -1,0 +1,1 @@
+- A reCAPTCHA widget lingers while the real page loads underneath. It is probably a passive v3 badge, not a block: carry on with the page.

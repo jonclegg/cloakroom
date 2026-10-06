@@ -1,0 +1,1 @@
+- Akamai 403. It gave way on its own; wait and retry.

@@ -1,0 +1,7 @@
+- Bot checks, from 22 sites beaten on 2026-10-06. Only a visible challenge counts: a page that merely ships a hidden reCAPTCHA frame or mentions a vendor in its scripts is not blocking you.
+- Press-and-hold (PerimeterX, the most common): `hold` 8000-10000 ms at the exact button centre from the DOM hints. A few pixels off fails silently. A challenge that has sat on screen goes stale and never clears: if a hold showed no progress, `goto` the current URL to get a fresh one, then hold again.
+- Cloudflare "Just a moment" / "Performing security verification": usually clears by itself. `wait` a step or two, then click the Turnstile checkbox if one appears.
+- reCAPTCHA checkbox: one click. Image grid: click matching tiles, one per step.
+- Hard blocks (Akamai "Access Denied" 403, Cloudflare "Attention Required!") have nothing to click. Wait, then retry once (`goto` the same URL, or `open` the site again). If still blocked, reply blocked: these clear as the browser's identity ages, not by technique.
+- DataDome "Bot or Not?" slider: a correctly aimed, humanized drag is still rejected. Try one `drag` at most, then reply blocked so the caller can solve it in the viewer.
+- Retry before giving up: many checks cleared only on the second attempt.

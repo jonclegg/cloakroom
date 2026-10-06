@@ -138,6 +138,10 @@ fi
 
 export_host_timezone
 
+# The API writes notes, run logs and photos here. Create it as this user, so on
+# Linux the bind mount is ours and the API runs as us rather than root.
+mkdir -p "${CLOAKROOM_DATA_DIR:-${HOME}/.cloakroom/data}"
+
 echo "1/3 Downloading the latest CloakBrowser image (first time can take a few minutes)..."
 docker compose pull hello --quiet
 docker compose build --pull --quiet cloakroom
@@ -147,10 +151,11 @@ if ! up_log="$(docker compose up -d --force-recreate cloakroom 2>&1)"; then
   echo "$up_log"
   case "$up_log" in
     *"port is already allocated"*|*"address already in use"*|*"ports are not available"*)
-      fail "Another program on this computer is already using port ${CDP_PORT} or ${VIEWER_PORT}.
+      fail "Another program on this computer is already using port ${CDP_PORT}, ${VIEWER_PORT} or ${API_PORT}.
 Pick free ports in ${PWD}/.env, for example:
   CLOAKROOM_CDP_PORT=9333
   CLOAKROOM_VIEWER_PORT=6090
+  CLOAKROOM_API_PORT=8433
 then run: cloakroom start"
       ;;
   esac
@@ -171,6 +176,7 @@ fi
 
 viewer_url="http://$(docker compose port cloakroom 6080)"
 cdp_url="http://$(docker compose port cloakroom 9222)"
+api_url="http://$(docker compose port cloakroom 8423)"
 
 cat <<EOF
 
@@ -178,12 +184,20 @@ ${green}${bold}You're ready!${reset}
 
   See the browser:    ${viewer_url}
   Agents and scripts: ${cdp_url}   (Playwright, Puppeteer, or open this folder in your agent)
+  Chat with it:       cloakroom chat "<message>"   (API ${api_url})
   Watch from a phone: cloakroom share
   Stop everything:    cloakroom stop
 
   Only this computer can connect. Your logins are kept between restarts.
 
 EOF
+
+# Cloakroom's own agent needs an OpenRouter key. Ask for it on a local page, never
+# in a terminal an agent might be reading or in chat.
+if [ ! -s "${CLOAKROOM_DATA_DIR:-${HOME}/.cloakroom/data}/openrouter.key" ]; then
+  echo "  One more step for 'cloakroom chat': add your OpenRouter key with: cloakroom key"
+  echo
+fi
 
 if [ "$(uname)" = "Darwin" ]; then
   open "$viewer_url"

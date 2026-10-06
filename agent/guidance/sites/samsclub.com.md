@@ -1,0 +1,1 @@
+- PerimeterX press-and-hold, which appears on the search results page rather than the homepage. `hold` clears it.

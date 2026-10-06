@@ -1,0 +1,1 @@
+- PerimeterX press-and-hold. `hold` 8-10 s at the button centre clears it. Served as /blocked?url=... after repeated automated entry, and as an overlay on search pages. Passing sets a clearance cookie for a while.
