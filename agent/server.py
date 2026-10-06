@@ -28,17 +28,19 @@ import threading
 import time
 import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import unquote
+from urllib.parse import parse_qs, unquote, urlparse
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
 import cloakroom_agent as agent  # noqa: E402
+import key_setup  # noqa: E402
 from notebook import Notebook  # noqa: E402
 
 DATA_DIR = agent.DATA_DIR
 HOST_DATA_DIR = os.environ.get("CLOAKROOM_HOST_DATA_DIR", "")
 PORT = int(os.environ.get("CLOAKROOM_API_LISTEN_PORT", "8423"))
+HOST_PORT = os.environ.get("CLOAKROOM_API_HOST_PORT") or str(PORT)
 CDP_URL = os.environ.get("CDP_URL", "http://127.0.0.1:9222")
 SESSION_IDLE_SECONDS = int(os.environ.get("CLOAKROOM_SESSION_IDLE_SECONDS", "1800"))
 DEFAULT_MAX_STEPS = 40
@@ -137,10 +139,14 @@ class Cloakroom:
         self.lock = threading.Lock()
         self.browser = None
         self.current = None
+        self.setup_codes = key_setup.SetupCodes()
 
     # ---- called from HTTP threads
 
     def submit(self, message, session_id, max_steps):
+        if not self._has_key():
+            raise PermissionError("No OpenRouter key yet. Run `cloakroom key` and paste it "
+                                  "into the page it opens.")
         with self.lock:
             if session_id:
                 session = self.sessions.get(session_id)
@@ -172,6 +178,18 @@ class Cloakroom:
             ],
         }
 
+    def setup_link(self, in_browser):
+        """A one-time key setup URL. In-browser, it opens in a new tab of Cloakroom's
+        own browser, for a user who is reaching the machine through the viewer."""
+        code = self.setup_codes.issue()
+        if in_browser:
+            url = f"http://127.0.0.1:{PORT}/setup?code={code}"
+            self.queue.put(lambda context: context.new_page().goto(url))
+        else:
+            url = f"http://127.0.0.1:{HOST_PORT}/setup?code={code}"
+        return {"setup_url": url, "in_browser": in_browser, "openrouter_key": self._has_key(),
+                "expires_in_seconds": key_setup.CODE_SECONDS}
+
     @staticmethod
     def _has_key():
         try:
@@ -188,6 +206,13 @@ class Cloakroom:
         playwright = sync_playwright().start()
         while True:
             run = self.queue.get()
+            if not isinstance(run, Run):
+                # A small browser chore (opening the setup page), not a chat run.
+                try:
+                    run(self._connect(playwright))
+                except Exception:  # noqa: BLE001 - a chore must not stop the worker
+                    traceback.print_exc()
+                continue
             self.current = run
             try:
                 self._run(playwright, run)
@@ -300,6 +325,39 @@ def make_handler(cloakroom, token):
             self._send(401, {"error": "missing or wrong bearer token (see ~/.cloakroom/data/api-token)"})
             return False
 
+        def _send_html(self, code, page):
+            body = page.encode()
+            self.send_response(code)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Referrer-Policy", "no-referrer")
+            self.end_headers()
+            self.wfile.write(body)
+
+        def _setup(self, method):
+            if not key_setup.local_host(self.headers.get("Host")):
+                return self._send(403, {"error": "the setup page only answers on localhost"})
+            if method == "GET":
+                code = (parse_qs(urlparse(self.path).query).get("code") or [""])[0]
+                if not cloakroom.setup_codes.valid(code):
+                    return self._send_html(410, key_setup.expired_page())
+                return self._send_html(200, key_setup.form_page(code))
+            length = int(self.headers.get("Content-Length") or 0)
+            form = parse_qs(self.rfile.read(length).decode())
+            code = (form.get("code") or [""])[0]
+            key = (form.get("key") or [""])[0].strip()
+            if not cloakroom.setup_codes.valid(code):
+                return self._send_html(410, key_setup.expired_page())
+            try:
+                info = key_setup.check_key(key)
+            except ValueError as exc:
+                return self._send_html(400, key_setup.form_page(code, str(exc)))
+            key_setup.save_key(key)
+            cloakroom.setup_codes.consume(code)
+            print("openrouter key saved", flush=True)
+            return self._send_html(200, key_setup.saved_page(info))
+
         def _parts(self):
             return [unquote(part) for part in self.path.split("?")[0].strip("/").split("/")]
 
@@ -307,6 +365,8 @@ def make_handler(cloakroom, token):
             parts = self._parts()
             if parts == ["v1", "health"]:
                 return self._send(200, {"ok": True})
+            if parts == ["setup"]:
+                return self._setup("GET")
             if not self._authorized():
                 return None
             if parts == ["v1", "status"]:
@@ -365,9 +425,14 @@ def make_handler(cloakroom, token):
             return json.loads(self.rfile.read(length))
 
         def do_POST(self):  # noqa: N802
+            parts = self._parts()
+            if parts == ["setup"]:
+                return self._setup("POST")
             if not self._authorized():
                 return None
-            parts = self._parts()
+            if parts == ["v1", "setup-link"]:
+                body = self._json_body()
+                return self._send(200, cloakroom.setup_link(bool(body.get("in_browser"))))
             if parts == ["v1", "chat"]:
                 try:
                     body = self._json_body()
@@ -379,6 +444,8 @@ def make_handler(cloakroom, token):
                 max_steps = min(int(body.get("max_steps") or DEFAULT_MAX_STEPS), MAX_STEPS_LIMIT)
                 try:
                     run = cloakroom.submit(message, body.get("session"), max_steps)
+                except PermissionError as exc:
+                    return self._send(412, {"error": str(exc)})
                 except LookupError as exc:
                     return self._send(404, {"error": str(exc)})
                 except RuntimeError as exc:

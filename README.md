@@ -39,7 +39,7 @@ How the agent drives it matters too. It enters each site from a Bing search resu
 - **Sessions that persist.** Sign in once. Cookies and logins stay in the profile across runs and restarts.
 - **You can watch and help.** Open the live viewer on this computer, or have your agent run `cloakroom share` to get a private link for your phone. Click, type, or sign in when the agent gets stuck.
 - **Standard CDP.** Playwright, Puppeteer, or anything else that speaks the Chrome DevTools Protocol connects to `127.0.0.1:9222`. No SDK.
-- **Or just talk to it.** `cloakroom chat "search walmart.com for paper towels"` hands the message to Cloakroom, which drives the browser with DeepSeek and replies when it's done. Follow up in the same tab with `--session`. It remembers what it learned about each site for next time. It needs an OpenRouter key (`OPENROUTER_API_KEY`) and `python3`.
+- **Or just talk to it.** `cloakroom chat "search walmart.com for paper towels"` hands the message to Cloakroom, which drives the browser with DeepSeek and replies when it's done. Follow up in the same tab with `--session`. It remembers what it learned about each site for next time. It needs an OpenRouter key, which you paste into a local page that `cloakroom key` opens (never into your agent's chat), and `python3`.
 
 **Proof:** on September 26, 2026, a cloud browser was blocked on twelve big homepages (Home Depot, Ticketmaster, Sam's Club, and others). Cloakroom loaded all twelve.
 

@@ -11,6 +11,7 @@ import os
 import sys
 import urllib.error
 import urllib.request
+import webbrowser
 
 API_URL = os.environ.get("CLOAKROOM_API_URL") or f"http://127.0.0.1:{os.environ.get('CLOAKROOM_API_PORT') or 8423}"
 DATA_DIR = os.environ.get("CLOAKROOM_DATA_DIR") or os.path.expanduser("~/.cloakroom/data")
@@ -75,6 +76,11 @@ def main():
     notes = commands.add_parser("notes", help="what Cloakroom has learned, per site")
     notes.add_argument("site", nargs="?")
 
+    key = commands.add_parser("key", help="open a page to paste the OpenRouter key into")
+    key.add_argument("--in-browser", action="store_true",
+                     help="open it in Cloakroom's own browser, for use through the viewer")
+    key.add_argument("--json", action="store_true", help="print the link instead of opening it")
+
     args = parser.parse_args()
 
     if args.command == "chat":
@@ -105,6 +111,21 @@ def main():
 
     if args.command == "cancel":
         print(json.dumps(call("POST", f"/v1/runs/{args.run}/cancel"), indent=2))
+        return 0
+
+    if args.command == "key":
+        link = call("POST", "/v1/setup-link", {"in_browser": args.in_browser})
+        if args.json:
+            print(json.dumps(link, indent=2))
+            return 0
+        if args.in_browser:
+            print("Opened the key page in Cloakroom's browser. Paste the key there "
+                  "(through the viewer, or `cloakroom share` from a phone).")
+        elif webbrowser.open(link["setup_url"]):
+            print(f"Opened {link['setup_url']}\nPaste the key there; it is checked and saved on this machine.")
+        else:
+            print(f"Open this on this machine and paste the key there:\n  {link['setup_url']}")
+        print("The link works once and lasts 15 minutes.")
         return 0
 
     if args.command == "notes":

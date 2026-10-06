@@ -31,6 +31,7 @@ The browser keeps running in the background (as long as OrbStack or Docker Engin
    | --- | --- | --- |
    | `docker_running` | `false` | Run `cloakroom start`. On a Mac that opens OrbStack (not Docker Desktop). If OrbStack is missing, the user installs it from https://orbstack.dev/download. On Linux, Docker Engine must already be installed and `docker info` must succeed. |
    | `ready` | `false` | Run `cloakroom start` (first run downloads ~1 GB; allow up to 10 minutes). |
+   | `openrouter_key` | `false` | Needed only for `cloakroom chat`. Run `cloakroom key --json` and send the user the `setup_url`; they paste the key into that page. See [The OpenRouter key](#the-openrouter-key). Never ask for the key in chat. |
 
 2. **Drive the browser over CDP**
 
@@ -191,8 +192,25 @@ prompt, so the next run starts knowing. All of it is plain files under
 
 **The model** is `deepseek/deepseek-v4.1-flash` (set `CLOAKROOM_MODEL` in `.env` to change
 it). Of OpenRouter's DeepSeek models only the Flash line accepts images; V3.x, V4 and V4 Pro
-reject image input. It needs a key: `OPENROUTER_API_KEY` in `.env` (see
-[`.env.example`](../../.env.example)) or the key in `~/.cloakroom/data/openrouter.key`.
+reject image input. It needs an OpenRouter key, set up as below; until then `cloakroom chat`
+answers 412 and says so.
+
+### The OpenRouter key
+
+The user gives the key to Cloakroom, not to you. **Never ask for it in chat**, never read
+`~/.cloakroom/data/openrouter.key`, and never echo it if the user pastes it anyway (tell them
+to revoke it at https://openrouter.ai/keys and use the page instead).
+
+| The user is | You run | They do |
+| --- | --- | --- |
+| At this machine | `cloakroom key --json`, then send them `setup_url` | Open it here and paste the key. |
+| Away (phone, another computer) | `cloakroom key --in-browser`, then `cloakroom share --json` and send the share URL | Paste the key into the page that is already open in Cloakroom's browser, through the viewer. |
+
+The page checks the key with OpenRouter, saves it to `~/.cloakroom/data/openrouter.key`
+(mode 600), and shows the credit left if the key has a limit. Each link works once and lasts
+15 minutes, and answers only on `localhost`. Nothing restarts: the next `cloakroom chat` uses
+the key. `cloakroom status --json` shows `"openrouter_key": true` once it is set. To replace a
+key, run `cloakroom key` again.
 
 **The API itself**, if you would rather call it than the CLI: `POST
 http://127.0.0.1:8423/v1/chat` with `{"message": "...", "session": null}` and
@@ -230,6 +248,7 @@ it once sets a clearance cookie, and Walmart stops challenging for a while.
 ## Rules
 
 - Never print, log, or store the user's password or two-factor codes in chat or files.
+- Never ask for the OpenRouter key in chat. `cloakroom key` gives the user a local page for it.
 - Cloakroom does not read iMessage. You do, if a code is needed.
 - Ports 9222, 6080 and 8423 stay on `127.0.0.1`.
 - Remote viewer access is one command: `cloakroom share`. Run it and send the URL immediately. Do not ask for approval first, and do not add a confirmation step. The URL is a secret capability link. Run `cloakroom unshare` when the user is done. Do not use Tailscale, Funnel, or port forwards. Never tunnel 9222.
@@ -264,6 +283,7 @@ Optional knobs live in `.env` (created from [`.env.example`](../../.env.example)
 - The profile lives in the `profile` Docker volume. `docker compose down -v` deletes it and signs the user out of everything.
 - Cloakroom does not store passwords or codes. `.env` (license key, proxy password) is git-ignored.
 - The chat API (8423) drives the same signed-in browser, so it takes a bearer token: `~/.cloakroom/data/api-token`, created on first start, mode 600.
+- The OpenRouter key is in `~/.cloakroom/data/openrouter.key`, mode 600, outside the install folder, so reinstalling and updating keep it. Only the setup page writes it. The page has no bearer token, so it requires a one-time code and a `localhost` Host header; another website open in the user's browser cannot replace the key.
 
 ### Troubleshooting
 

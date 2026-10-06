@@ -25,6 +25,8 @@ Usage: cloakroom <command> [--json]
   run <id>       A run's steps, reply, and saved files.
   cancel <id>    Stop a run.
   notes [site]   What Cloakroom has learned about each site.
+  key            Open a page to paste the OpenRouter key into (never into chat).
+                 --in-browser opens it in Cloakroom's browser, for the viewer.
 EOF
   exit 2
 }
@@ -36,15 +38,18 @@ status() {
   browser=""
   [ "$container" = healthy ] && browser="$(curl -fsS --max-time 10 "${CDP_URL}/json/version" | sed -n 's/.*"Browser": *"\([^"]*\)".*/\1/p')"
   share_url="$(active_share_url)"
+  openrouter_key=false
+  [ -s "${DATA_DIR}/openrouter.key" ] && openrouter_key=true
   if [ "${1:-}" = --json ]; then
-    printf '{"docker_running":%s,"container":"%s","ready":%s,"browser":%s,"cdp_url":"%s","viewer_url":"%s","api_url":"%s","share_url":%s}\n' \
+    printf '{"docker_running":%s,"container":"%s","ready":%s,"browser":%s,"cdp_url":"%s","viewer_url":"%s","api_url":"%s","openrouter_key":%s,"share_url":%s}\n' \
       "$docker_running" "$container" "$([ "$container" = healthy ] && echo true || echo false)" \
-      "$([ -n "$browser" ] && echo "\"$browser\"" || echo null)" "$CDP_URL" "$VIEWER_URL" "$API_URL" \
+      "$([ -n "$browser" ] && echo "\"$browser\"" || echo null)" "$CDP_URL" "$VIEWER_URL" "$API_URL" "$openrouter_key" \
       "$([ -n "$share_url" ] && echo "\"$share_url\"" || echo null)"
     return 0
   else
-    printf 'Docker running:    %s\nContainer:         %s\nBrowser:           %s\nViewer:            %s\nShare:             %s\nCDP:               %s\nChat API:          %s\n' \
-      "$docker_running" "$container" "${browser:--}" "$VIEWER_URL" "${share_url:--}" "$CDP_URL" "$API_URL"
+    printf 'Docker running:    %s\nContainer:         %s\nBrowser:           %s\nViewer:            %s\nShare:             %s\nCDP:               %s\nChat API:          %s\nOpenRouter key:    %s\n' \
+      "$docker_running" "$container" "${browser:--}" "$VIEWER_URL" "${share_url:--}" "$CDP_URL" "$API_URL" \
+      "$([ "$openrouter_key" = true ] && echo set || echo "missing (run: cloakroom key)")"
   fi
   [ "$container" = healthy ]
 }
@@ -57,7 +62,7 @@ case "$command" in
   status) status "$@" ;;
   share) exec bash "${CLOAKROOM_ROOT}/share.sh" "$@" ;;
   unshare) exec bash "${CLOAKROOM_ROOT}/share.sh" stop "$@" ;;
-  chat|run|cancel|notes)
+  chat|run|cancel|notes|key)
     python3="$(command -v python3 || true)"
     if [ -z "$python3" ]; then
       echo "cloakroom ${command} needs python3 on the host." >&2

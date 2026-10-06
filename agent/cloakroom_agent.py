@@ -48,6 +48,7 @@ import page_images  # noqa: E402
 DEFAULT_MODEL = os.environ.get("CLOAKROOM_MODEL") or "deepseek/deepseek-v4.1-flash"
 API = "https://openrouter.ai/api/v1/chat/completions"
 DATA_DIR = os.environ.get("CLOAKROOM_DATA", "/data")
+KEY_PATH = os.path.join(DATA_DIR, "openrouter.key")
 
 BLOCK_PATTERNS = {
     "press_and_hold": r"press\s*(&|and)\s*hold|activate and hold",
@@ -114,17 +115,13 @@ READ_LINK_LIMIT = 60
 # ---------------------------------------------------------------- OpenRouter
 
 def api_key() -> str:
-    """Key from the environment, or <data>/openrouter.key."""
-    if os.environ.get("OPENROUTER_API_KEY"):
-        return os.environ["OPENROUTER_API_KEY"].strip()
-    path = os.path.join(DATA_DIR, "openrouter.key")
-    if os.path.exists(path):
-        with open(path) as fh:
-            return fh.read().strip()
-    raise RuntimeError(
-        "No OpenRouter key. Set OPENROUTER_API_KEY in .env, or write it to "
-        "~/.cloakroom/data/openrouter.key"
-    )
+    """The key from <data>/openrouter.key, which `cloakroom key` writes."""
+    if os.path.exists(KEY_PATH):
+        with open(KEY_PATH) as fh:
+            key = fh.read().strip()
+        if key:
+            return key
+    raise RuntimeError("No OpenRouter key yet. Run `cloakroom key` and paste it into the page it opens.")
 
 
 def chat(messages, model, max_tokens=8000, temperature=0.1, json_mode=False):
