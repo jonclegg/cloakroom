@@ -116,6 +116,10 @@ if ! grep -qE '^CLOAKROOM_TIMEZONE=..*' .env 2>/dev/null; then
   fi
 fi
 
+# The API writes notes, run logs and photos here. Create it as this user, so on
+# Linux the bind mount is ours and the API runs as us rather than root.
+mkdir -p "${CLOAKROOM_DATA_DIR:-${HOME}/.cloakroom/data}"
+
 echo "1/3 Downloading the latest CloakBrowser image (first time can take a few minutes)..."
 docker compose pull hello --quiet
 docker compose build --pull --quiet cloakroom
@@ -137,6 +141,7 @@ fi
 
 viewer_url="http://$(docker compose port cloakroom 6080)"
 cdp_url="http://$(docker compose port cloakroom 9222)"
+api_url="http://$(docker compose port cloakroom 8423)"
 
 cat <<EOF
 
@@ -144,6 +149,7 @@ ${green}${bold}You're ready!${reset}
 
   See the browser:    ${viewer_url}
   Agents and scripts: ${cdp_url}   (Playwright, Puppeteer, or open this folder in your agent)
+  Chat with it:       ./cloakroom chat "<message>"   (API ${api_url})
   Watch from a phone: ./cloakroom share
   Stop everything:    ./cloakroom stop
 

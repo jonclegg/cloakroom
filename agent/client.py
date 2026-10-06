@@ -1,0 +1,128 @@
+"""`cloakroom chat`, `runs`, `notes`, `cancel`: a client for the chat API.
+
+Standard library only, so the host needs python3 and nothing else.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import sys
+import urllib.error
+import urllib.request
+
+API_URL = os.environ.get("CLOAKROOM_API_URL") or f"http://127.0.0.1:{os.environ.get('CLOAKROOM_API_PORT') or 8423}"
+DATA_DIR = os.environ.get("CLOAKROOM_DATA_DIR") or os.path.expanduser("~/.cloakroom/data")
+
+
+def token():
+    path = os.path.join(DATA_DIR, "api-token")
+    if not os.path.exists(path):
+        raise SystemExit(f"No API token at {path}. Is Cloakroom running? Try: cloakroom start")
+    with open(path) as fh:
+        return fh.read().strip()
+
+
+def call(method, path, body=None, timeout=None):
+    request = urllib.request.Request(
+        API_URL + path,
+        method=method,
+        data=json.dumps(body).encode() if body is not None else None,
+        headers={"Authorization": f"Bearer {token()}", "Content-Type": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            return json.load(response)
+    except urllib.error.HTTPError as exc:
+        raise SystemExit(f"Cloakroom API {exc.code}: {exc.read().decode()[:500]}") from exc
+    except urllib.error.URLError as exc:
+        raise SystemExit(f"Cannot reach the Cloakroom API at {API_URL}: {exc.reason}. "
+                         f"Try: cloakroom start") from exc
+
+
+def print_run(run):
+    print(run["reply"] or "(no reply)")
+    print()
+    print(f"status:  {run['status']}   steps: {run['steps']}   cost: ${run['cost_usd']:.4f}")
+    if run.get("files"):
+        where = run.get("host_dir") and os.path.join(run["host_dir"], "files")
+        print(f"files:   {len(run['files'])} saved" + (f" in {where}" if where else ""))
+    for note in run.get("notes_written") or []:
+        print(f"noted:   {note['site']}: {note['text']}")
+    print(f"run:     {run['run']}")
+    print(f"session: {run['session']}   (continue with: cloakroom chat --session {run['session']} \"...\")")
+
+
+def main():
+    parser = argparse.ArgumentParser(prog="cloakroom")
+    commands = parser.add_subparsers(dest="command", required=True)
+
+    chat = commands.add_parser("chat", help="send Cloakroom a message; it works the browser and replies")
+    chat.add_argument("message")
+    chat.add_argument("--session", help="continue this session (same tab, same conversation)")
+    chat.add_argument("--max-steps", type=int, default=40)
+    chat.add_argument("--no-wait", action="store_true", help="return the run id at once")
+    chat.add_argument("--json", action="store_true")
+
+    runs = commands.add_parser("run", help="show a run: status, steps, files")
+    runs.add_argument("run")
+    runs.add_argument("--json", action="store_true")
+
+    cancel = commands.add_parser("cancel", help="stop a run")
+    cancel.add_argument("run")
+
+    notes = commands.add_parser("notes", help="what Cloakroom has learned, per site")
+    notes.add_argument("site", nargs="?")
+
+    args = parser.parse_args()
+
+    if args.command == "chat":
+        body = {"message": args.message, "session": args.session,
+                "max_steps": args.max_steps, "wait": not args.no_wait}
+        run = call("POST", "/v1/chat", body)
+        if args.json:
+            print(json.dumps(run, indent=2))
+        elif args.no_wait:
+            print(f"run {run['run']} queued in session {run['session']}; check it with: cloakroom run {run['run']}")
+        else:
+            print_run(run)
+        return 0 if run["status"] in ("done", "needs_input", "queued") else 1
+
+    if args.command == "run":
+        run = call("GET", f"/v1/runs/{args.run}")
+        if args.json:
+            print(json.dumps(run, indent=2))
+            return 0
+        for step in run.get("trace") or []:
+            flag = f" [bot check: {step['block_type']}]" if step.get("blocked") else ""
+            print(f"[{step['step']}] {step.get('url', '')[:90]}{flag}")
+            print(f"     {step.get('observation') or ''}")
+            print(f"     -> {step.get('did', '')}")
+        print()
+        print_run(run)
+        return 0
+
+    if args.command == "cancel":
+        print(json.dumps(call("POST", f"/v1/runs/{args.run}/cancel"), indent=2))
+        return 0
+
+    if args.command == "notes":
+        if args.site:
+            result = call("GET", f"/v1/notes/{args.site}")
+            print(result["notes"] or "(no notes)")
+            print()
+            for run in result["runs"]:
+                blocks = f"  bot checks: {', '.join(run['blocks'])}" if run["blocks"] else ""
+                print(f"{run['time'][:16]}  {run['status']:<11} {run['message'][:70]}{blocks}")
+        else:
+            result = call("GET", "/v1/notes")
+            print("\n".join(result["sites"]) or "(no sites yet)")
+            if result["general"]:
+                print("\nGeneral:\n" + result["general"])
+        return 0
+    return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main())
