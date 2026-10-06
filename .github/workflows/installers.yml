@@ -75,6 +75,8 @@ jobs:
       - name: Stops and asks before installing Docker Desktop (Windows PowerShell 5.1)
         shell: powershell
         run: |
+          # The installer stops with an error on purpose; read it rather than fail on it.
+          $ErrorActionPreference = "Continue"
           $env:Path = ($env:Path -split ";" | Where-Object { -not (Test-Path (Join-Path $_ "docker.exe")) }) -join ";"
           $out = powershell -NoProfile -Command "irm https://raw.githubusercontent.com/$env:GITHUB_REPOSITORY/$env:GITHUB_SHA/install.ps1 | iex" 2>&1 | Out-String
           Write-Host $out
@@ -83,6 +85,7 @@ jobs:
       - name: Asks for Linux containers when Docker runs Windows containers
         shell: powershell
         run: |
+          $ErrorActionPreference = "Continue"
           $out = powershell -NoProfile -Command "irm https://raw.githubusercontent.com/$env:GITHUB_REPOSITORY/$env:GITHUB_SHA/install.ps1 | iex" 2>&1 | Out-String
           Write-Host $out
           if ($out -notmatch "Switch to Linux containers") { throw "expected the Linux containers message" }
