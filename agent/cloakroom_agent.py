@@ -186,34 +186,56 @@ def site_of(url):
 
 # ------------------------------------------------------------------ the page
 
+HINTS_SCRIPT = """([selector, limit]) => {
+  const out = [];
+  for (const el of document.querySelectorAll(selector)) {
+    if (out.length >= limit) break;
+    const box = el.getBoundingClientRect();
+    if (box.width < 4 || box.height < 4) continue;
+    if (box.bottom < 0 || box.right < 0 || box.top > innerHeight || box.left > innerWidth) continue;
+    const style = getComputedStyle(el);
+    if (style.visibility === 'hidden' || style.display === 'none' || style.opacity === '0') continue;
+    out.push({
+      tag: el.tagName.toLowerCase(),
+      text: (el.innerText || '').trim().replace(/\\s+/g, ' ').slice(0, 60),
+      label: (el.getAttribute('aria-label') || el.getAttribute('placeholder') || el.id || '').slice(0, 40),
+      x: box.x + box.width / 2,
+      y: box.y + box.height / 2,
+    });
+  }
+  return out;
+}"""
+
+
+def frame_offset(frame):
+    """Where a frame's viewport sits in the page, or None if it is not on screen."""
+    if frame.parent_frame is None:
+        return 0.0, 0.0
+    box = frame.frame_element().bounding_box()
+    if not box or box["width"] < 4 or box["height"] < 4:
+        return None
+    return box["x"], box["y"]
+
+
 def dom_hints(page, limit=40):
-    """Visible interactive elements with page-relative CSS-pixel centres."""
+    """Visible interactive elements in the viewport, with page CSS-pixel centres.
+
+    One script per frame: asking Playwright element by element costs hundreds of
+    CDP round trips a step, which was most of a step's time.
+    """
     hints = []
     for frame in page.frames:
         try:
-            els = frame.locator(HINT_SELECTOR)
-            count = min(els.count(), limit)
-        except Exception:  # noqa: BLE001
-            continue
-        for i in range(count):
-            el = els.nth(i)
-            try:
-                if not el.is_visible():
-                    continue
-                box = el.bounding_box()
-                if not box or box["width"] < 4 or box["height"] < 4:
-                    continue
-                hints.append({
-                    "tag": el.evaluate("e => e.tagName.toLowerCase()"),
-                    "text": (el.inner_text() or "").strip().replace("\n", " ")[:60],
-                    "label": (el.get_attribute("aria-label")
-                              or el.get_attribute("placeholder")
-                              or el.get_attribute("id") or "")[:40],
-                    "x": round(box["x"] + box["width"] / 2),
-                    "y": round(box["y"] + box["height"] / 2),
-                })
-            except Exception:  # noqa: BLE001
+            offset = frame_offset(frame)
+            if offset is None:
                 continue
+            found = frame.evaluate(HINTS_SCRIPT, [HINT_SELECTOR, limit])
+        except Exception:  # noqa: BLE001 - frames detach mid-scan
+            continue
+        for hint in found:
+            hint["x"] = round(hint["x"] + offset[0])
+            hint["y"] = round(hint["y"] + offset[1])
+            hints.append(hint)
     seen, out = set(), []
     for h in hints:
         key = (h["x"], h["y"], h["text"])
@@ -244,37 +266,42 @@ def safe_screenshot(page, path, timeout=15000):
         return False
 
 
+DETECT_SCRIPT = """(widgets) => {
+  const visible = (el) => {
+    const box = el.getBoundingClientRect();
+    if (box.width < 60 || box.height < 30) return false;
+    const style = getComputedStyle(el);
+    return style.visibility !== 'hidden' && style.display !== 'none' && style.opacity !== '0';
+  };
+  const found = [];
+  for (const [name, selector] of Object.entries(widgets)) {
+    if ([...document.querySelectorAll(selector)].slice(0, 4).some(visible)) found.push(name);
+  }
+  return {text: (document.title || '') + '\\n' + (document.body ? document.body.innerText : ''), widgets: found};
+}"""
+
+
 def detect_block(page):
     """DOM-side block check, independent of the model.
 
     Challenge text and vendor widgets usually live in a cross-origin iframe, so
     scanning `body` alone misses them: Cloudflare's "Just a moment..." puts the
-    wording in the <title>, not the body. This checks the title and body text,
-    the URL, every frame's URL, and the real challenge widget elements.
+    wording in the <title>, not the body. This checks the title and body text of
+    every frame, the URL, and the real challenge widget elements. Only a *visible*
+    widget counts: Cars.com ships a hidden recaptcha iframe on its normal homepage,
+    and an invisible frame or a passive v3 badge is not something to solve.
     """
     url = (page.url or "").lower()
+    texts = []
     found = []
-
-    try:
-        title = page.title() or ""
-    except Exception:  # noqa: BLE001
-        title = ""
-    try:
-        body = page.inner_text("body")
-    except Exception:  # noqa: BLE001
-        body = ""
-    text = (title + "\n" + body).lower()
-
-    # Cross-origin frames: their body text is worth reading too.
-    frame_texts = []
     for frame in page.frames:
         try:
-            loc = frame.locator("body")
-            if loc.count():
-                frame_texts.append(loc.inner_text() or "")
-        except Exception:  # noqa: BLE001
+            result = frame.evaluate(DETECT_SCRIPT, VENDOR_WIDGETS)
+        except Exception:  # noqa: BLE001 - frames detach mid-scan
             continue
-    all_text = (text + "\n" + "\n".join(frame_texts)).lower()
+        texts.append(result["text"])
+        found.extend(result["widgets"])
+    all_text = "\n".join(texts).lower()
 
     for name, pat in BLOCK_PATTERNS.items():
         if name == "blocked_url":
@@ -286,33 +313,6 @@ def detect_block(page):
     if re.search(INTERSTITIAL_TEXT, all_text):
         found.append("cloudflare_interstitial")
         found.append("blocked")
-
-    # Only a *visible* vendor widget is a challenge. Cars.com ships a hidden
-    # recaptcha iframe on its normal homepage; an invisible frame or a passive
-    # v3 badge is not something the user has to solve.
-    for name, sel in VENDOR_WIDGETS.items():
-        for frame in page.frames:
-            try:
-                loc = frame.locator(sel)
-                count = min(loc.count(), 4)
-            except Exception:  # noqa: BLE001
-                continue
-            hit = False
-            for i in range(count):
-                try:
-                    el = loc.nth(i)
-                    if not el.is_visible():
-                        continue
-                    box = el.bounding_box()
-                    if not box or box["width"] < 60 or box["height"] < 30:
-                        continue
-                    found.append(name)
-                    hit = True
-                    break
-                except Exception:  # noqa: BLE001
-                    continue
-            if hit:
-                break
 
     return sorted(set(found))
 
@@ -443,6 +443,7 @@ def decide(page, shot, turn, model):
         f"Detected from the DOM right now: {turn.dom_blocks or 'no bot check'}\n"
         f"{ACTION_SCHEMA}"
     )
+    model_started = time.time()
     raw, cost = chat(
         [{"role": "user", "content": [
             {"type": "text", "text": prompt},
@@ -451,6 +452,7 @@ def decide(page, shot, turn, model):
         model=model,
         json_mode=True,
     )
+    turn.last_model_seconds = time.time() - model_started
     turn.cost_usd += cost
     try:
         return json.loads(raw)
@@ -617,6 +619,7 @@ class Turn:
         self.blocks_seen = []
         self.dom_blocks = []
         self.last_read = ""
+        self.last_model_seconds = 0.0
         self.cost_usd = 0.0
         self.cancelled = False
         os.makedirs(self.shots_dir, exist_ok=True)
@@ -643,6 +646,7 @@ def run_turn(page, turn, on_step):
         if turn.cancelled:
             return "cancelled", "Cancelled by the caller.", page
         shot = os.path.join(turn.shots_dir, f"step-{step:02d}.png")
+        started = time.time()
         if not safe_screenshot(page, shot):
             # A challenge that is mid-navigation destroys the page context. A
             # PerimeterX overlay in particular can navigate as it arms, and a
@@ -655,10 +659,12 @@ def run_turn(page, turn, on_step):
             else:
                 return "failed", "I could not take a screenshot of the page.", page
 
+        shot_done = time.time()
         try:
             turn.dom_blocks = detect_block(page)
         except Exception:  # noqa: BLE001
             turn.dom_blocks = []
+        detect_done = time.time()
 
         try:
             decision = decide(page, shot, turn, turn.model)
@@ -671,6 +677,7 @@ def run_turn(page, turn, on_step):
             humanize.pause(1.5, 2.5)
             continue
         failures = 0
+        decide_done = time.time()
 
         url = page.url
         site = site_of(url)
@@ -700,6 +707,12 @@ def run_turn(page, turn, on_step):
             "dom_blocks": turn.dom_blocks,
             "reason": decision.get("reason"),
             "screenshot": os.path.relpath(shot, turn.run_dir),
+            "seconds": {
+                "screenshot": round(shot_done - started, 1),
+                "detect": round(detect_done - shot_done, 1),
+                "hints": round(decide_done - detect_done - turn.last_model_seconds, 1),
+                "model": round(turn.last_model_seconds, 1),
+            },
         }
 
         if (decision.get("action") or "").lower() == "reply":
@@ -715,6 +728,7 @@ def run_turn(page, turn, on_step):
             record["did"], page = execute(page, decision, turn)
         except Exception as exc:  # noqa: BLE001 - one bad action should not end the turn
             record["did"] = f"action failed: {str(exc)[:200]}"
+        record["seconds"]["action"] = round(time.time() - decide_done, 1)
         turn.steps.append(record)
         on_step(turn)
     return "step_limit", f"I ran out of steps ({turn.max_steps}) before finishing.", page
