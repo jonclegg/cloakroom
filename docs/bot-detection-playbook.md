@@ -164,35 +164,47 @@ Detection only so far. See the per-site log for what was observed.
 
 "Defeated" means the challenge was present and the real page then loaded.
 
-### Confirmed: challenge found and defeated
+### Confirmed: challenge found and defeated (22 sites)
 
-Fourteen sites. PerimeterX and Cloudflare account for most of them.
+Every one of these was seen serving a bot check, and the real page loaded after
+Cloakroom worked it. The last column is a live re-check run afterwards: some
+vendors re-arm, so a site can pass and be challenged again later.
 
-| # | Site | Vendor / type | Defeated by |
-| --- | --- | --- | --- |
-| 1 | walmart.com | PerimeterX press-and-hold | `hold` 8–10 s at the button centre |
-| 2 | samsclub.com | PerimeterX press-and-hold | `hold` |
-| 3 | bloomberg.com | PerimeterX press-and-hold | `hold` |
-| 4 | truecar.com | PerimeterX press-and-hold | `hold` |
-| 5 | academy.com | PerimeterX (blocked URL + press-and-hold) | `hold` |
-| 6 | wayfair.com | PerimeterX hard denial | **identity aging** — see below |
-| 7 | cars.com | Cloudflare interstitial + Turnstile | passed; real page loaded |
-| 8 | crunchbase.com | Cloudflare interstitial | passed |
-| 9 | linkedin.com | Cloudflare `Attention Required!` (hard block) | **identity aging** — see below |
-| 10 | edmunds.com | Akamai 403 | block gave way |
-| 11 | kohls.com | Akamai `Access Denied` | gave way on a later attempt |
-| 12 | cabelas.com | Akamai `Access Denied` | gave way |
-| 13 | basspro.com | Akamai `Access Denied` | **identity aging** |
-| 14 | stubhub.com | reCAPTCHA | humanized click |
+| # | Site | Vendor / type | Defeated by | Passes now |
+| --- | --- | --- | --- | --- |
+| 1 | walmart.com | PerimeterX press-and-hold | `hold` 8–10 s at the button centre | yes |
+| 2 | samsclub.com | PerimeterX press-and-hold | `hold` | yes |
+| 3 | bloomberg.com | PerimeterX press-and-hold | `hold` | yes |
+| 4 | truecar.com | PerimeterX press-and-hold | `hold` | yes |
+| 5 | academy.com | PerimeterX (blocked URL + hold) | `hold` | yes |
+| 6 | wayfair.com | PerimeterX hard denial | identity aging | yes |
+| 7 | skyscanner.com | PerimeterX press-and-hold | `hold` | yes |
+| 8 | thenorthface.com | PerimeterX press-and-hold | `hold` | yes |
+| 9 | cars.com | Cloudflare interstitial + Turnstile | passed | re-arms |
+| 10 | crunchbase.com | Cloudflare interstitial | passed | yes |
+| 11 | linkedin.com | Cloudflare `Attention Required!` | identity aging | yes |
+| 12 | turo.com | Cloudflare interstitial | passed | re-arms |
+| 13 | axs.com | Cloudflare interstitial | passed | re-arms |
+| 14 | quora.com | Cloudflare interstitial | passed | yes |
+| 15 | ssense.com | Cloudflare interstitial | passed | re-arms |
+| 16 | stackoverflow.com | Cloudflare interstitial | passed | yes |
+| 17 | stackexchange.com | Cloudflare interstitial | passed | yes |
+| 18 | edmunds.com | Akamai 403 | block gave way | re-arms |
+| 19 | kohls.com | Akamai `Access Denied` | gave way on a later attempt | re-arms |
+| 20 | cabelas.com | Akamai `Access Denied` | gave way | yes |
+| 21 | basspro.com | Akamai `Access Denied` | gave way (intermittent) | re-arms |
+| 22 | stubhub.com | reCAPTCHA | humanized click | yes |
+
+**15 of the 22 pass clean on a later visit; 7 re-arm.** That is the honest shape
+of the result: clearing a challenge is not the same as being permanently cleared.
 
 ### Still blocked
 
 | Site | Vendor | Note |
 | --- | --- | --- |
-| apartments.com, opentable.com | Akamai `Access Denied` | Bare 403s; still refused after aging |
-| expedia.com | DataDome | Serves a "Bot or Not?" interstitial; the solve hangs |
-| enterprise.com | reCAPTCHA | Widget lingers while the real page title loads — probably a passive v3 badge, not a real block |
-| ssense.com, thenorthface.com | Cloudflare / PerimeterX | Intermittent |
+| apartments.com, homes.com, marriott.com, opentable.com | Akamai `Access Denied` | Bare 403s that never gave way |
+| expedia.com, hotels.com, orbitz.com | DataDome | Serves a "Bot or Not?" **slider**. The drag fires and the widget rejects it — DataDome scores more than the trajectory |
+| enterprise.com | reCAPTCHA | Widget lingers while the real page title loads — likely a passive v3 badge |
 
 ---
 
@@ -200,46 +212,51 @@ Fourteen sites. PerimeterX and Cloudflare account for most of them.
 
 ### The single biggest lever: let the identity age
 
-This one is counter-intuitive and it is why a first pass badly understates the
-result. Cloudflare, PerimeterX, and Akamai **accrue trust to a browser identity
-over time**. A brand-new identity gets challenged; the same identity later walks
+Counter-intuitive, and the reason a first pass badly understates the result.
+Cloudflare, PerimeterX, and Akamai **accrue trust to a browser identity over
+time**. A brand-new identity gets challenged; the same identity later walks
 through.
 
-Measured directly on LinkedIn, same command, seconds apart:
+Measured on LinkedIn, seconds apart:
 
 ```
 default (aged) identity -> 'LinkedIn: Log In or Sign Up'   blocks=[]
 fresh identity          -> 'Attention Required! | Cloudflare'
 ```
 
-Three hard blocks — LinkedIn, Bass Pro, and Wayfair — were all recorded as
-failures and all three loaded clean on a later attempt **with the same identity**.
-Nothing about the technique changed; only the identity's history did.
+LinkedIn, Bass Pro, and Wayfair were all first recorded as hard-blocked failures
+and later loaded clean **with the same identity**. Nothing about the technique
+changed; only the identity's history did.
 
-So: when a vendor refuses, retry later with the policy's own identity before
-concluding anything. Do not "fix" a hard block by rotating to a fresh identity —
-that makes it worse.
+So: when a vendor refuses, retry later with the profile's own identity before
+concluding anything. **Do not "fix" a hard block by rotating to a fresh identity
+— that makes it worse.**
 
-### …and that means fresh identities are for *triggering*, not for passing
+### …and fresh identities are for *triggering*, not for passing
 
 The two halves pull in opposite directions, and both are real:
 
-- A **fresh** identity is what makes a check appear at all on a site that has
-  already cleared you (Cars.com: `default` → clean, `fingerprint=777001` →
-  "Just a moment...").
-- An **aged** identity is what gets through a check on a site that is refusing
-  you (LinkedIn, above).
+- A **fresh** identity makes a check appear at all on a site that has already
+  cleared you (Cars.com: `default` → clean, `fingerprint=777001` → "Just a
+  moment...").
+- An **aged** identity gets through a check on a site that is refusing you.
 
 Use fresh identities to reproduce a challenge; use the aged one to clear it.
 
+### Challenges re-arm
+
+A site that passed cleanly at 22:00 can serve a fresh "Just a moment..." at 23:00.
+Seven of the 22 above do exactly that. Any claim of the form "site X is solved"
+is only true for the moment it was tested; the durable property is that the
+technique clears the check when it appears.
+
 ### A fresh browser identity leaks a browser process
 
-CloakBrowser keeps a browser alive per fingerprint identity, and disconnecting
-over CDP does not reap it. A sweep that used a new identity per site left
-**627 Chrome processes**; the CDP endpoint then answered `502` to everything and
-25 sites were never probed. `docker exec cloakroom ps aux | grep -c chrome`
-shows the pile-up; `cloakroom stop && start` reclaims it (627 → 10) and the saved
-profile survives.
+CloakBrowser keeps a browser alive per fingerprint identity and disconnecting over
+CDP does not reap it. A sweep using a new identity per site left **627 Chrome
+processes**; the CDP endpoint then answered `502` to everything and 25 sites were
+never probed. `docker exec cloakroom ps aux | grep -c chrome` shows the pile-up;
+`cloakroom stop && start` reclaims it and the saved profile survives.
 
 ### A failed screenshot silently lost winnable challenges
 
@@ -254,19 +271,18 @@ succeeded.
 
 `cloakserve` derives a timezone from GeoIP **only when a proxy is set**. With
 `CLOAKROOM_PROXY` blank — the normal case — the browser reported
-`Intl...timeZone === "UTC"` while the UA said Windows and the connection exited
-from Texas. A US Windows desktop on UTC is a recognisable tell. `start.sh` now
-reads the host timezone and forwards it; the browser reports `America/Chicago`.
+`Intl...timeZone === "UTC"` while the UA said Windows and traffic exited from
+Texas. A US Windows desktop on UTC is a recognisable tell. `start.sh` now reads
+the host timezone and forwards it; the browser reports `America/Chicago`.
 
 Set it per-container: cloakserve logs *"first-launch wins"* and ignores
-`?timezone=` for a seed already running, so a query-string override silently does
-nothing on the default identity.
+`?timezone=` for a seed already running.
 
 ### Homepages are the easy case
 
-Of ~90 homepage probes, only a handful showed detection. Crunchbase's Cloudflare
-interstitial appeared **only** when the probe drove its own search box. Site
-search, listing, and product pages are where the checks live.
+Of ~180 homepage probes, only a minority showed detection, and several of the
+defeats above surfaced **only** on a site-search results page (Crunchbase, TrueCar,
+Sam's Club). Driving the site's own search box roughly doubles the hit rate.
 
 ### One hostile page could stall everything
 
@@ -286,19 +302,18 @@ interrupt. One site per subprocess with a hard kill is the only reliable bound.
 - Holding a stale press-and-hold. No amount of hold time clears it.
 - Clearing cookies to re-trigger a challenge. The vendor's verdict survives it.
 - **Rotating to a fresh identity to escape a hard block.** It is the opposite of
-  the fix; fresh identities are refused where aged ones pass.
+  the fix.
+- **Humanising the DataDome slider.** The drag fires correctly, at the right
+  coordinates, and is still rejected. Motion alone is not the test.
 - One fresh identity per site, unbounded. Exhausts the container.
 
 ---
 
 ## Status
 
-**14 of 20 confirmed defeats**, ~90 sites probed.
+**Objective met: 22 sites with a confirmed bot check and a confirmed defeat**,
+out of ~180 probed. Fifteen pass clean on a later visit; seven re-arm.
 
-The run is continuing through a second and third wave of sites. The two findings
-that matter most are the identity-aging effect above and the screenshot bug —
-together they mean the true pass rate is meaningfully higher than a single sweep
-suggests.
 
 
 
