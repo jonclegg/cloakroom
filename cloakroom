@@ -27,6 +27,11 @@ Usage: cloakroom <command> [--json]
   notes [site]   What Cloakroom has learned about each site.
   key            Open a page to paste the OpenRouter key into (never into chat).
                  --in-browser opens it in Cloakroom's browser, for the viewer.
+  smoke [sites]  Reach a few big sites from Bing and open a report with
+                 screenshots (default: amazon walmart target bestbuy).
+
+chat, run, cancel, notes, key and smoke run inside the container, so from any
+shell (PowerShell too) they also work as: docker exec cloakroom cloakroom <command>
 EOF
   exit 2
 }
@@ -54,6 +59,20 @@ status() {
   [ "$container" = healthy ]
 }
 
+require_running() {
+  if [ "$(health)" != healthy ]; then
+    echo "Cloakroom is not running. Start it with: cloakroom start" >&2
+    exit 1
+  fi
+}
+
+open_on_host() {
+  case "$(uname -s)" in
+    Darwin) open "$1" ;;
+    *) command -v xdg-open >/dev/null 2>&1 && xdg-open "$1" >/dev/null 2>&1 ;;
+  esac
+}
+
 command="${1:-}"
 [ $# -gt 0 ] && shift
 case "$command" in
@@ -62,14 +81,31 @@ case "$command" in
   status) status "$@" ;;
   share) exec bash "${CLOAKROOM_ROOT}/share.sh" "$@" ;;
   unshare) exec bash "${CLOAKROOM_ROOT}/share.sh" stop "$@" ;;
-  chat|run|cancel|notes|key)
-    python3="$(command -v python3 || true)"
-    if [ -z "$python3" ]; then
-      echo "cloakroom ${command} needs python3 on the host." >&2
-      exit 1
+  key)
+    require_running
+    if [ "${1:-}" = --json ] || [ "${1:-}" = --in-browser ]; then
+      exec docker exec cloakroom cloakroom key "$@"
     fi
-    CLOAKROOM_API_URL="$API_URL" CLOAKROOM_DATA_DIR="$DATA_DIR" \
-      exec "$python3" "${CLOAKROOM_ROOT}/agent/client.py" "$command" "$@"
+    link="$(docker exec cloakroom cloakroom key --json)"
+    url="$(printf '%s' "$link" | sed -n 's/.*"setup_url": *"\([^"]*\)".*/\1/p')"
+    open_on_host "$url" || true
+    echo "Paste the OpenRouter key into: ${url}"
+    echo "The link works once and lasts 15 minutes."
+    ;;
+  smoke)
+    require_running
+    if [ "${1:-}" = --json ]; then
+      exec docker exec cloakroom cloakroom smoke "$@"
+    fi
+    result=0
+    docker exec cloakroom cloakroom smoke "$@" || result=$?
+    report="$(ls -td "${DATA_DIR}"/smoke/smoke_* 2>/dev/null | head -n 1)/report.html"
+    [ -f "$report" ] && { open_on_host "$report" || true; }
+    exit "$result"
+    ;;
+  chat|run|cancel|notes)
+    require_running
+    exec docker exec cloakroom cloakroom "$command" "$@"
     ;;
   *) usage ;;
 esac

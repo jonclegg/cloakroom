@@ -30,7 +30,6 @@ from __future__ import annotations
 import base64
 import json
 import os
-import random
 import re
 import sys
 import time
@@ -56,6 +55,8 @@ BLOCK_PATTERNS = {
     "slider": r"slide to verify|drag the slider",
     "robot_or_human": r"robot or human",
     "access_denied": r"access denied|reference\s*#\s*\d",
+    "human_verification": r"confirm you are human|human verification",
+    "access_restricted": r"access (is )?temporarily restricted|unusual activity from your (device|network)",
     "blocked_url": r"/blocked|/sorry/|/challenge|/cdn-cgi/challenge",
 }
 
@@ -75,11 +76,13 @@ VENDOR_FRAMES = {
 
 VENDOR_WIDGETS = {
     "cloudflare_turnstile": "iframe[src*='challenges.cloudflare.com'], .cf-turnstile, #cf-chl-widget",
-    "recaptcha": "iframe[src*='recaptcha'], .g-recaptcha, #recaptcha",
+    # size=invisible is the passive v3 badge (Enterprise shows it on every page)
+    "recaptcha": "iframe[src*='recaptcha']:not([src*='size=invisible']), .g-recaptcha, #recaptcha",
     "hcaptcha": "iframe[src*='hcaptcha'], .h-captcha",
     "perimeterx": "#px-captcha",
     "geetest": ".geetest_panel, .geetest_holder, [class*='geetest_']",
     "datadome": "#datadome-captcha, [class*='datadome']",
+    "aws_waf": "awswaf-captcha, iframe[src*='awswaf']",
 }
 
 INTERSTITIAL_TEXT = (
@@ -479,52 +482,20 @@ def decide(page, shot, turn, model):
 
 def do_hold(page, x, y, ms):
     """Press and hold. Returns the real elapsed milliseconds."""
-    humanize.human_move(page, x, y)
-    humanize.pause(0.15, 0.3)
-    page.mouse.move(x, y)
-    page.mouse.down()
     start = time.time()
-    while (time.time() - start) * 1000 < ms:
-        time.sleep(0.05)
-    page.mouse.up()
+    humanize.hold(page, x, y, ms)
     elapsed = int((time.time() - start) * 1000)
     humanize.pause(1.0, 1.8)
     return elapsed
 
 
-def do_drag(page, x, y, x2, y2, ms=900):
+def do_drag(page, x, y, x2, y2):
     """Press at (x,y), drag to (x2,y2) with human-like easing, release.
 
     Slider challenges (Geetest, Alibaba, PerimeterX) score the path, not just the
-    endpoints: a straight teleport is rejected. This eases in and out, overshoots
-    slightly, then settles.
+    endpoints: a straight teleport is rejected.
     """
-    humanize.human_move(page, x, y)
-    humanize.pause(0.12, 0.25)
-    page.mouse.move(x, y)
-    page.mouse.down()
-    humanize.pause(0.05, 0.15)
-
-    steps = random.randint(28, 45)
-    overshoot = random.uniform(3, 9)
-    for i in range(1, steps + 1):
-        t = i / steps
-        # ease-in-out
-        eased = 3 * t * t - 2 * t * t * t
-        px = x + (x2 - x) * eased
-        py = y + (y2 - y) * eased
-        if i == steps:
-            px += overshoot
-        px += random.uniform(-1.2, 1.2)
-        py += random.uniform(-1.2, 1.2)
-        page.mouse.move(px, py)
-        time.sleep(random.uniform(0.008, 0.022))
-    # settle back onto the target
-    for settle in (0.6, 0.3, 0.1, 0.0):
-        page.mouse.move(x2 + overshoot * settle, y2)
-        time.sleep(random.uniform(0.03, 0.07))
-    humanize.pause(0.1, 0.2)
-    page.mouse.up()
+    humanize.drag(page, x, y, x2, y2)
     humanize.pause(1.0, 1.8)
     return f"drag ({x},{y})->({x2},{y2})"
 
@@ -549,9 +520,7 @@ def execute(page, d, turn):
 
     if action == "click" and x is not None and y is not None:
         before = set(page.context.pages)
-        humanize.human_move(page, x, y)
-        humanize.pause(0.08, 0.22)
-        page.mouse.click(x, y)
+        humanize.click_at(page, x, y)
         humanize.pause(0.6, 1.2)
         opened = [item for item in page.context.pages if item not in before]
         if opened:
@@ -561,21 +530,20 @@ def execute(page, d, turn):
 
     if action == "type" and text:
         if x is not None and y is not None:
-            humanize.human_move(page, x, y)
-            page.mouse.click(x, y)
+            humanize.click_at(page, x, y)
             humanize.pause(0.2, 0.4)
         humanize.human_type(page, text)
         humanize.pause(0.3, 0.7)
         return f"type {text!r}", page
 
     if action == "press" and text:
-        page.keyboard.press(text)
+        humanize.press(page, text)
         humanize.pause(0.6, 1.2)
         return f"press {text}", page
 
     if action == "scroll":
         amount = int(d.get("amount") or 600)
-        page.mouse.wheel(0, amount)
+        humanize.scroll(page, amount)
         humanize.pause(0.6, 1.2)
         return f"scroll {amount}", page
 
@@ -619,7 +587,9 @@ def usable_page(page, turn):
     The browser is shared: on the Dell another agent drove its own tab during a
     run, our tab's viewport shrank to 300x250 for seven minutes, and later our
     tab was closed. A closed tab is replaced by the newest tab on the same site
-    (or a new one); a shrunken window is maximized again. Both are logged.
+    (or a new one); a shrunken window is re-sized by cloakserve to a size whose
+    reported geometry holds up (maximized does not, on this binary). A zoomed page
+    goes back to 100%. All of it is logged.
     """
     if page.is_closed():
         site = site_of(turn.steps[-1]["url"]) if turn.steps else ""
@@ -631,13 +601,12 @@ def usable_page(page, turn):
     except Exception:  # noqa: BLE001 - mid-navigation; check again next step
         return page
     if size[0] < 800 or size[1] < 500:
-        session = page.context.new_cdp_session(page)
-        window = session.send("Browser.getWindowForTarget")["windowId"]
-        session.send("Browser.setWindowBounds", {"windowId": window, "bounds": {"windowState": "normal"}})
-        session.send("Browser.setWindowBounds", {"windowId": window, "bounds": {"windowState": "maximized"}})
-        session.detach()
+        humanize.settle_window(page)
         humanize.pause(0.5, 1.0)
-        turn.repairs.append(f"step {len(turn.steps)}: viewport was {size[0]}x{size[1]}; maximized the window")
+        turn.repairs.append(f"step {len(turn.steps)}: viewport was {size[0]}x{size[1]}; re-sized the window")
+    zoom = humanize.reset_zoom(page)
+    if zoom != 1:
+        turn.repairs.append(f"step {len(turn.steps)}: page was zoomed to {zoom:.0%}; reset to 100%")
     return page
 
 

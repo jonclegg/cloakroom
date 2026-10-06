@@ -1,13 +1,32 @@
 name: cloakroom
 
 services:
+  # Users pull the published image (`cloakroom start` does). Developers build it
+  # locally with CLOAKROOM_DEV=1 cloakroom start, which uses the two build
+  # sections below; CLOAKBROWSER_SOURCE points the base at a local checkout.
+  #
+  # Base image only: never started. CloakBrowser from the jonclegg fork, which adds
+  # a persistent default seed, process limits, GeoIP without a proxy, coherent
+  # window geometry and hardware, and native X11 input. Built without the
+  # browser binary, which the container downloads from CloakHQ on first start.
+  cloakbrowser:
+    build:
+      context: ${CLOAKBROWSER_SOURCE:-https://github.com/jonclegg/CloakBrowser.git#cloakroom-fixes}
+      args:
+        PREFETCH_BINARY: "false"
+    image: cloakroom-cloakbrowser:local
+    entrypoint: ["true"]
+    restart: "no"
+
   cloakroom:
     build:
       context: ./image
       additional_contexts:
         agent: ./agent
         examples: ./examples
-    image: cloakroom:local
+        cloakbrowser: service:cloakbrowser
+    image: ${CLOAKROOM_IMAGE:-ghcr.io/jonclegg/cloakroom:latest}
+    pull_policy: missing
     container_name: cloakroom
     hostname: cloakroom
     restart: unless-stopped
@@ -36,10 +55,12 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 60s
+      # The first start downloads the browser from CloakHQ.
+      start_period: 300s
 
   hello:
-    image: cloakhq/cloakbrowser:latest
+    image: ${CLOAKROOM_IMAGE:-ghcr.io/jonclegg/cloakroom:latest}
+    pull_policy: missing
     profiles: ["examples"]
     depends_on:
       cloakroom:

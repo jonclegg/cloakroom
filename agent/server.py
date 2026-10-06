@@ -7,6 +7,9 @@
     GET  /v1/runs/{run}/shots/{path} a step screenshot
     GET  /v1/notes                   sites with notes
     GET  /v1/notes/{site}            the notes and run log for one site
+    POST /v1/smoke                   {"sites": [...], "wait": true}: reach a few big sites
+                                     and screenshot them (report.html in <data>/smoke/)
+    GET  /v1/smoke/{id}
     GET  /v1/status
     GET  /v1/health                  no token; for the container health check
 
@@ -35,6 +38,7 @@ sys.path.insert(0, HERE)
 
 import cloakroom_agent as agent  # noqa: E402
 import key_setup  # noqa: E402
+import smoke  # noqa: E402
 from notebook import Notebook  # noqa: E402
 
 DATA_DIR = agent.DATA_DIR
@@ -139,6 +143,7 @@ class Cloakroom:
         self.lock = threading.Lock()
         self.browser = None
         self.current = None
+        self.smokes = {}
         self.setup_codes = key_setup.SetupCodes()
 
     # ---- called from HTTP threads
@@ -163,6 +168,13 @@ class Cloakroom:
             self.runs[run.id] = run
         self.queue.put(run)
         return run
+
+    def submit_smoke(self, sites):
+        job = smoke.Smoke(sites or smoke.DEFAULT_SITES, HOST_DATA_DIR)
+        with self.lock:
+            self.smokes[job.id] = job
+        self.queue.put(job)
+        return job
 
     def status(self):
         return {
@@ -206,6 +218,15 @@ class Cloakroom:
         playwright = sync_playwright().start()
         while True:
             run = self.queue.get()
+            if isinstance(run, smoke.Smoke):
+                try:
+                    smoke.run(self._connect(playwright), run, self.notebook, self._has_key())
+                except Exception as exc:  # noqa: BLE001 - the worker must outlive one bad job
+                    traceback.print_exc()
+                    run.status = f"failed: {type(exc).__name__}: {exc}"
+                finally:
+                    run.done.set()
+                continue
             if not isinstance(run, Run):
                 # A small browser chore (opening the setup page), not a chat run.
                 try:
@@ -385,6 +406,11 @@ def make_handler(cloakroom, token):
                                             "runs": cloakroom.notebook.runs_for(site, 1000)})
                 except ValueError as exc:
                     return self._send(400, {"error": str(exc)})
+            if len(parts) == 3 and parts[:2] == ["v1", "smoke"]:
+                job = cloakroom.smokes.get(parts[2])
+                if job is None:
+                    return self._send(404, {"error": f"no smoke test {parts[2]}"})
+                return self._send(200, job.view())
             if len(parts) >= 3 and parts[:2] == ["v1", "runs"]:
                 run = cloakroom.runs.get(parts[2])
                 if len(parts) == 3:
@@ -433,6 +459,16 @@ def make_handler(cloakroom, token):
             if parts == ["v1", "setup-link"]:
                 body = self._json_body()
                 return self._send(200, cloakroom.setup_link(bool(body.get("in_browser"))))
+            if parts == ["v1", "smoke"]:
+                body = self._json_body()
+                sites = body.get("sites") or []
+                if not isinstance(sites, list) or not all(isinstance(site, str) and site for site in sites):
+                    return self._send(400, {"error": "sites must be a list of domains"})
+                job = cloakroom.submit_smoke(sites)
+                if body.get("wait", True) is False:
+                    return self._send(202, job.view())
+                job.done.wait()
+                return self._send(200, job.view())
             if parts == ["v1", "chat"]:
                 try:
                     body = self._json_body()

@@ -1,6 +1,7 @@
-"""`cloakroom chat`, `runs`, `notes`, `cancel`: a client for the chat API.
+"""`cloakroom chat`, `run`, `cancel`, `notes`, `key`, `smoke`, `status`: a client for the chat API.
 
-Standard library only, so the host needs python3 and nothing else.
+Standard library only. It runs inside the container (`docker exec cloakroom
+cloakroom <command>`), so the host needs nothing but Docker.
 """
 
 from __future__ import annotations
@@ -81,6 +82,13 @@ def main():
                      help="open it in Cloakroom's own browser, for use through the viewer")
     key.add_argument("--json", action="store_true", help="print the link instead of opening it")
 
+    smoke = commands.add_parser("smoke", help="reach a few big sites and screenshot them")
+    smoke.add_argument("sites", nargs="*", help="domains (default: amazon.com walmart.com target.com bestbuy.com)")
+    smoke.add_argument("--json", action="store_true")
+
+    status = commands.add_parser("status", help="browser, model, key, and queue")
+    status.add_argument("--json", action="store_true")
+
     args = parser.parse_args()
 
     if args.command == "chat":
@@ -126,6 +134,30 @@ def main():
         else:
             print(f"Open this on this machine and paste the key there:\n  {link['setup_url']}")
         print("The link works once and lasts 15 minutes.")
+        return 0
+
+    if args.command == "smoke":
+        print("Visiting " + ", ".join(args.sites or ["amazon.com", "walmart.com", "target.com", "bestbuy.com"])
+              + " from Bing, the way a person would. This takes a few minutes.", file=sys.stderr, flush=True)
+        result = call("POST", "/v1/smoke", {"sites": args.sites})
+        if args.json:
+            print(json.dumps(result, indent=2))
+        else:
+            for item in result["results"]:
+                mark = "ok  " if item["ok"] else "FAIL"
+                cleared = " (cleared a bot check)" if item["worked_challenge"] and item["ok"] else ""
+                print(f"{mark} {item['site']:16} {item.get('title') or item.get('error') or ''}{cleared}")
+            print(f"\n{result['passed']} of {result['total']} reached. Report: {result['host_report'] or result['report']}")
+        return 0 if result["passed"] == result["total"] else 1
+
+    if args.command == "status":
+        result = call("GET", "/v1/status")
+        if args.json:
+            print(json.dumps(result, indent=2))
+        else:
+            print(f"browser connected: {result['browser_connected']}\nmodel: {result['model']}\n"
+                  f"openrouter key: {'set' if result['openrouter_key'] else 'missing (run: cloakroom key)'}\n"
+                  f"queue: {result['queue_depth']}")
         return 0
 
     if args.command == "notes":

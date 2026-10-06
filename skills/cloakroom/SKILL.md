@@ -72,7 +72,7 @@ The browser keeps running in the background (as long as OrbStack or Docker Engin
 
 4. **Humanize interactions**
 
-   Drive the page like a person whenever you are on Bing or on the destination site. [`examples/humanize.py`](../../examples/humanize.py) is the default implementation (`pause`, `human_move`, `human_click`, `human_type`). Copy that behavior in ad-hoc scripts too.
+   Drive the page like a person whenever you are on Bing or on the destination site. [`examples/humanize.py`](../../examples/humanize.py) is the default implementation (`pause`, `human_move`, `human_click`, `click_at`, `human_type`, `press`, `scroll`, `hold`, `drag`). Import it in ad-hoc scripts rather than calling `page.mouse` / `page.keyboard`: it delivers real X11 mouse and keyboard events through cloakserve's `POST /input` endpoint instead of CDP's synthetic input.
 
    - Short random pauses between actions (a few tenths of a second up to a couple of seconds).
    - Before each click, `mouse.move` along a short curved path with a little jitter, then click. A single instant jump to the target reads as a script.
@@ -342,11 +342,13 @@ For the phone viewer: `winget install --id Cloudflare.cloudflared`, then `cloakr
 
 ### Internals
 
-- **`cloakroom` container:** official `cloakhq/cloakbrowser` plus x11vnc and noVNC ([`image/Dockerfile`](../../image/Dockerfile)). Runs [`cloakserve`](https://github.com/CloakHQ/CloakBrowser#cdp-server-mode) headed on a virtual display (passes more bot checks; it's what the viewer shows). `shm_size: 2gb` (Chromium crashes at the 64 MB default). Healthcheck on `/json/version`.
+- **`cloakroom` container:** CloakBrowser built from the [jonclegg/CloakBrowser](https://github.com/jonclegg/CloakBrowser/tree/cloakroom-fixes) fork (the `cloakbrowser` service in `docker-compose.yml`; set `CLOAKBROWSER_SOURCE` to build from a local checkout) plus x11vnc and noVNC ([`image/Dockerfile`](../../image/Dockerfile)). Runs [`cloakserve`](https://github.com/CloakHQ/CloakBrowser#cdp-server-mode) headed on a virtual display (passes more bot checks; it's what the viewer shows). `shm_size: 2gb` (Chromium crashes at the 64 MB default). Healthcheck on `/json/version`.
 - **Volumes:** `profile` (cookies and logins) and `binary-cache` (licensed binary, downloaded once). [`image/cloakroom-serve.sh`](../../image/cloakroom-serve.sh) keeps `cloakserve` from deleting the profile on exit.
-- **Extra identities:** add `?fingerprint=<seed>` to the CDP URL, e.g. `http://127.0.0.1:9222?fingerprint=11111&timezone=Europe/Berlin`. Only the default identity is saved to `profile`. See the [upstream docs](https://github.com/CloakHQ/CloakBrowser#cdp-server-mode).
+- **Fork changes:** the default identity's seed is saved in the profile (`.cloakserve-seed`), so the fingerprint survives restarts with the cookies. Timezone and locale come from GeoIP of the egress IP (`--geoip`). The window is sized so the geometry pages read stays on screen, GPU/CPU/memory come from one coherent profile per seed, and `POST /input` gives real X11 input.
+- **Persona:** on a Mac, `start.sh` adds `COMPOSE_FILE=docker-compose.yml:docker-compose.mac.yml` to `.env`, so the browser presents as a Mac (Apple GPU, a 1440x900 Retina screen, the Mac's own fonts mounted read-only). On an Apple Silicon host that persona clears DataDome and Cloudflare checks the Windows persona fails. Linux hosts keep the Windows persona. Delete that line from `.env` to go back to Windows.
+- **Extra identities:** add `?fingerprint=<seed>` to the CDP URL, e.g. `http://127.0.0.1:9222?fingerprint=11111&timezone=Europe/Berlin`. Only the default identity is saved to `profile`. Idle extra identities close after 5 minutes, and at most 8 browsers run at once (the least recently used idle one closes to make room). Reconnecting to a running identity with different settings returns `409`; `POST /fingerprint/<seed>/close` first. See the [upstream docs](https://github.com/CloakHQ/CloakBrowser#cdp-server-mode).
 - **Stealth test:** `./examples/cloaktest.sh` runs upstream's bot-detection suite with the `.env` settings.
-- **Updates:** `cloakroom start` always pulls the latest `cloakhq/cloakbrowser`. To pin, change `FROM cloakhq/cloakbrowser:latest` in `image/Dockerfile` to a tag like `0.5.11`.
+- **Updates:** `cloakroom start` rebuilds from the fork's `cloakroom-fixes` branch. To pin, put a commit after the `#` in the `cloakbrowser` build context in `docker-compose.yml`.
 - **Plain Compose:** `cp .env.example .env && docker compose up -d --build`, then `docker compose down`.
 
 ### Links
