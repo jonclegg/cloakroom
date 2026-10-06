@@ -102,6 +102,7 @@ class Run:
             "blocks": turn.blocks_seen if turn else [],
             "memory": turn.memory if turn else [],
             "notes_written": turn.notes_written if turn else [],
+            "repairs": turn.repairs if turn else [],
             "cost_usd": round(turn.cost_usd, 5) if turn else 0.0,
             "started": self.started,
             "finished": self.finished,
@@ -236,7 +237,7 @@ class Cloakroom:
         page.bring_to_front()
 
         run.status = "running"
-        turn = agent.Turn(run.id, run.message, list(session.conversation), self.notebook,
+        turn = agent.Turn(run.id, context, run.message, list(session.conversation), self.notebook,
                           run.dir, run.max_steps, agent.DEFAULT_MODEL)
         turn.cancelled = run.cancel_requested
         run.turn = turn

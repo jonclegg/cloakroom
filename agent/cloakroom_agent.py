@@ -127,7 +127,7 @@ def api_key() -> str:
     )
 
 
-def chat(messages, model, max_tokens=4000, temperature=0.1, json_mode=False):
+def chat(messages, model, max_tokens=8000, temperature=0.1, json_mode=False):
     """One completion. Returns (content, cost in USD).
 
     DeepSeek's Flash models reason before answering; the reasoning counts against
@@ -321,8 +321,9 @@ def read_page(page):
     """The page's visible text and links, for the model to read on its next step."""
     content = page.evaluate(
         """([textLimit, linkLimit]) => {
-          const main = document.querySelector('main') || document.body;
-          const text = (main.innerText || '').replace(/\\n{3,}/g, '\\n\\n').slice(0, textLimit);
+          const main = document.querySelector('main');
+          const scope = main && (main.innerText || '').trim().length > 200 ? main : document.body;
+          const text = (scope.innerText || '').replace(/\\n{3,}/g, '\\n\\n').slice(0, textLimit);
           const seen = new Set();
           const links = [];
           for (const a of document.querySelectorAll('a[href]')) {
@@ -351,23 +352,33 @@ def _conversation_text(conversation):
     return "\n".join(lines)
 
 
-def repeating(steps, count=3, tolerance=20):
-    """True when the last `count` steps were the same action at the same spot and URL."""
-    if len(steps) < count:
+def _signature(step, tolerance=20):
+    x, y = step.get("x"), step.get("y")
+    spot = (round(x / tolerance), round(y / tolerance)) if x is not None and y is not None else None
+    return step.get("action"), spot, step.get("text")
+
+
+def stuck(steps, window=6):
+    """True when the page has not moved on and the model is going round in circles.
+
+    Either the last three steps were the identical action, or the last `window`
+    steps on one URL used at most two different actions (Escape, click, Escape,
+    click; or read, scroll, read, scroll). Waiting out a check is not stuck.
+    """
+    if len(steps) >= 3:
+        last = steps[-3:]
+        if (len({_signature(step) for step in last}) == 1
+                and len({step.get("url") for step in last}) == 1
+                and last[0].get("action") not in ("wait", "hold")):
+            return True
+    if len(steps) < window:
         return False
-    last = steps[-count:]
-    first = last[0]
-    for step in last:
-        if step.get("action") != first.get("action") or step.get("url") != first.get("url"):
-            return False
-        if step.get("text") != first.get("text"):
-            return False
-        for axis in ("x", "y"):
-            if (step.get(axis) is None) != (first.get(axis) is None):
-                return False
-            if step.get(axis) is not None and abs(step[axis] - first[axis]) > tolerance:
-                return False
-    return first.get("action") not in ("wait", "scroll", "hold")
+    last = steps[-window:]
+    if len({step.get("url") for step in last}) != 1:
+        return False
+    if any(step.get("action") in ("wait", "hold", "save_images") for step in last):
+        return False
+    return len({_signature(step) for step in last}) <= 2
 
 
 def decide(page, shot, turn, model):
@@ -387,11 +398,11 @@ def decide(page, shot, turn, model):
     if turn.steps and turn.steps[-1].get("action") == "read" and turn.last_read:
         extra = f"\nText of the page from your last `read`:\n{turn.last_read}\n"
     memory = "\n".join(f"- {item}" for item in turn.memory) or "(empty)"
-    if repeating(turn.steps):
+    if stuck(turn.steps):
         extra += (
-            "\nWARNING: your last three steps were the same action in the same place "
-            "and the page did not move on. It is not working. Do something different: "
-            "use `type` with x,y, press Enter, use `read` to find a link, or `goto`.\n"
+            "\nWARNING: you are going round in circles: the same few actions on the same "
+            "page, and it is not moving on. Do something different: `type` with x,y, "
+            "press Enter, `read` to find the link you need and `goto` it, or reply.\n"
         )
     prompt = (
         f"You are Cloakroom. You operate a real Chrome browser for a caller who "
@@ -428,6 +439,9 @@ def decide(page, shot, turn, model):
         f"when finished (include what they asked for), \"needs_input\" to ask them "
         f"something (a code, a choice), \"blocked\" for a bot check you cannot clear, "
         f"\"failed\" otherwise.\n"
+        f"For several items from a list (the first three results, every order), "
+        f"`read` the list once, `remember` each item's URL, then `goto` them one by one; "
+        f"going back to a results page is slow and loses your place.\n"
         f"Keep notes for yourself. `remember` facts you will need later in this "
         f"message (listing URLs, prices, what you saved), because old steps scroll "
         f"out of view. Write a `note` when you learn something about a site that "
@@ -566,7 +580,8 @@ def execute(page, d, turn):
         return f"scroll {amount}", page
 
     if action == "back":
-        page.go_back(wait_until="domcontentloaded")
+        # Single-page sites go back without a load event, so wait only for commit.
+        page.go_back(wait_until="commit", timeout=10000)
         humanize.pause(0.8, 1.6)
         return "back", page
 
@@ -598,11 +613,40 @@ def execute(page, d, turn):
 
 # -------------------------------------------------------------------- loop
 
+def usable_page(page, turn):
+    """The page to drive this step, repairing what other CDP clients can break.
+
+    The browser is shared: on the Dell another agent drove its own tab during a
+    run, our tab's viewport shrank to 300x250 for seven minutes, and later our
+    tab was closed. A closed tab is replaced by the newest tab on the same site
+    (or a new one); a shrunken window is maximized again. Both are logged.
+    """
+    if page.is_closed():
+        site = site_of(turn.steps[-1]["url"]) if turn.steps else ""
+        same_site = [item for item in turn.context.pages if site and site_of(item.url) == site]
+        page = same_site[-1] if same_site else turn.context.new_page()
+        turn.repairs.append(f"step {len(turn.steps)}: tab was closed; now on {page.url[:80]}")
+    try:
+        size = page.evaluate("[innerWidth, innerHeight]")
+    except Exception:  # noqa: BLE001 - mid-navigation; check again next step
+        return page
+    if size[0] < 800 or size[1] < 500:
+        session = page.context.new_cdp_session(page)
+        window = session.send("Browser.getWindowForTarget")["windowId"]
+        session.send("Browser.setWindowBounds", {"windowId": window, "bounds": {"windowState": "normal"}})
+        session.send("Browser.setWindowBounds", {"windowId": window, "bounds": {"windowState": "maximized"}})
+        session.detach()
+        humanize.pause(0.5, 1.0)
+        turn.repairs.append(f"step {len(turn.steps)}: viewport was {size[0]}x{size[1]}; maximized the window")
+    return page
+
+
 class Turn:
     """One caller message being worked: its steps, notes, files and cost."""
 
-    def __init__(self, run_id, message, conversation, notebook, run_dir, max_steps, model):
+    def __init__(self, run_id, context, message, conversation, notebook, run_dir, max_steps, model):
         self.run_id = run_id
+        self.context = context
         self.message = message
         self.conversation = conversation
         self.notebook = notebook
@@ -615,6 +659,7 @@ class Turn:
         self.memory = []
         self.files = []
         self.notes_written = []
+        self.repairs = []
         self.sites = []
         self.blocks_seen = []
         self.dom_blocks = []
@@ -645,6 +690,7 @@ def run_turn(page, turn, on_step):
     for step in range(turn.max_steps):
         if turn.cancelled:
             return "cancelled", "Cancelled by the caller.", page
+        page = usable_page(page, turn)
         shot = os.path.join(turn.shots_dir, f"step-{step:02d}.png")
         started = time.time()
         if not safe_screenshot(page, shot):
