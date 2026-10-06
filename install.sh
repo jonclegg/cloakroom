@@ -208,10 +208,28 @@ enable_linux_docker() {
   user_name="$(id -un)"
   if [ "$user_name" != root ]; then
     as_root usermod -aG docker "$user_name" 2>/dev/null || as_root addgroup "$user_name" docker
-    if command -v setfacl >/dev/null 2>&1; then
-      as_root setfacl -m "user:${user_name}:rw" /var/run/docker.sock
-    fi
+    ensure_setfacl
+    as_root setfacl -m "user:${user_name}:rw" /var/run/docker.sock
   fi
+}
+
+# setfacl grants this user the Docker socket now, without logging out and in;
+# minimal images (Ubuntu cloud/server, Debian slim) don't ship it.
+ensure_setfacl() {
+  command -v setfacl >/dev/null 2>&1 && return 0
+  if command -v apt-get >/dev/null 2>&1; then
+    as_root apt-get install -y -qq acl >/dev/null
+  elif command -v dnf >/dev/null 2>&1; then
+    as_root dnf install -y -q acl
+  elif command -v yum >/dev/null 2>&1; then
+    as_root yum install -y -q acl
+  elif command -v zypper >/dev/null 2>&1; then
+    as_root zypper --non-interactive install acl
+  elif command -v apk >/dev/null 2>&1; then
+    as_root apk add -q acl
+  fi
+  command -v setfacl >/dev/null 2>&1 || needs_user "Docker is set up, but this session can't use it until you log out and back in
+(the docker group applies at login). Do that, then run the Cloakroom installer again."
 }
 
 linux_docker_info() {
