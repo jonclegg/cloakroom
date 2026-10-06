@@ -166,123 +166,139 @@ Detection only so far. See the per-site log for what was observed.
 
 ### Confirmed: challenge found and defeated
 
-Nine sites. Six of them are PerimeterX or Cloudflare — the two checks that
-account for most of what actually blocks this browser.
+Fourteen sites. PerimeterX and Cloudflare account for most of them.
 
-| # | Site | Vendor / type | Detected as | Defeated by | Where it appeared |
-| --- | --- | --- | --- | --- | --- |
-| 1 | walmart.com | PerimeterX press-and-hold | `press_and_hold` | `hold` 8.0–10.1 s at the button centre | homepage, then `/blocked?url=…`, then an inline overlay |
-| 2 | samsclub.com | PerimeterX press-and-hold ("Let us know you're not a robot") | `press_and_hold`, `robot_or_human` | `hold` | site search results |
-| 3 | bloomberg.com | PerimeterX press-and-hold | `perimeterx`, `press_and_hold` | `hold` | homepage |
-| 4 | truecar.com | PerimeterX press-and-hold ("Before we continue…") | `perimeterx`, `press_and_hold` | `hold` | site search results |
-| 5 | cars.com | Cloudflare interstitial + Turnstile | `cloudflare_interstitial` | passed; real homepage then loaded | homepage |
-| 6 | crunchbase.com | Cloudflare interstitial | `cloudflare_interstitial` | passed | **site search results, not the homepage** |
-| 7 | edmunds.com | Akamai 403 | `access_denied` | block gave way, real homepage loaded | homepage |
-| 8 | kohls.com | Akamai `Access Denied` | `access_denied` | block gave way on a later attempt | homepage |
-| 9 | stubhub.com | reCAPTCHA | `recaptcha` | humanized click | homepage |
+| # | Site | Vendor / type | Defeated by |
+| --- | --- | --- | --- |
+| 1 | walmart.com | PerimeterX press-and-hold | `hold` 8–10 s at the button centre |
+| 2 | samsclub.com | PerimeterX press-and-hold | `hold` |
+| 3 | bloomberg.com | PerimeterX press-and-hold | `hold` |
+| 4 | truecar.com | PerimeterX press-and-hold | `hold` |
+| 5 | academy.com | PerimeterX (blocked URL + press-and-hold) | `hold` |
+| 6 | wayfair.com | PerimeterX hard denial | **identity aging** — see below |
+| 7 | cars.com | Cloudflare interstitial + Turnstile | passed; real page loaded |
+| 8 | crunchbase.com | Cloudflare interstitial | passed |
+| 9 | linkedin.com | Cloudflare `Attention Required!` (hard block) | **identity aging** — see below |
+| 10 | edmunds.com | Akamai 403 | block gave way |
+| 11 | kohls.com | Akamai `Access Denied` | gave way on a later attempt |
+| 12 | cabelas.com | Akamai `Access Denied` | gave way |
+| 13 | basspro.com | Akamai `Access Denied` | **identity aging** |
+| 14 | stubhub.com | reCAPTCHA | humanized click |
 
-### Confirmed: challenge found, not defeated
+### Still blocked
 
-| Site | Vendor / type | Why it failed |
+| Site | Vendor | Note |
 | --- | --- | --- |
-| linkedin.com | Cloudflare hard block | Title `Attention Required! | Cloudflare`. Not the solvable interstitial — no widget, no checkbox, nothing to interact with. An IP/reputation verdict. |
-| wayfair.com | PerimeterX press-and-hold | **The hold works and still loses.** The widget confirms "Human Challenge completed, please wait…", then the next page is `Access to this page has been denied`. Clearing the interaction is not the same as being authorised. |
-| enterprise.com | reCAPTCHA | Widget stays present. Its real page title loads underneath, so this may be a passive v3 badge rather than a real block. |
-| expedia.com | DataDome | Serves a "Bot or Not?" interstitial. Passive: it decides on fingerprint, and the solve hangs. |
-| apartments.com, opentable.com | Akamai `Access Denied` | Bare 403s that did not give way. |
+| apartments.com, opentable.com | Akamai `Access Denied` | Bare 403s; still refused after aging |
+| expedia.com | DataDome | Serves a "Bot or Not?" interstitial; the solve hangs |
+| enterprise.com | reCAPTCHA | Widget lingers while the real page title loads — probably a passive v3 badge, not a real block |
+| ssense.com, thenorthface.com | Cloudflare / PerimeterX | Intermittent |
 
 ---
 
 ## Part 4 — Operational lessons (these cost the most time)
 
-### A fresh browser identity is what triggers detection
+### The single biggest lever: let the identity age
 
-The saved profile had already earned clearance on cars.com: it loaded straight
-through, every time, no matter how many cookies were cleared. Cloudflare's
-verdict is server-side and keyed to the browser identity, not to the cookie jar.
+This one is counter-intuitive and it is why a first pass badly understates the
+result. Cloudflare, PerimeterX, and Akamai **accrue trust to a browser identity
+over time**. A brand-new identity gets challenged; the same identity later walks
+through.
 
-Connecting on a **fresh identity** flips it immediately:
+Measured directly on LinkedIn, same command, seconds apart:
 
 ```
-default identity   -> title='Cars.com: Find New Cars, Used Cars, Dealerships, Prices'
-fingerprint=777001 -> title='Just a moment...'
+default (aged) identity -> 'LinkedIn: Log In or Sign Up'   blocks=[]
+fresh identity          -> 'Attention Required! | Cloudflare'
 ```
 
-That is the lever for reproducible testing. Use it.
+Three hard blocks — LinkedIn, Bass Pro, and Wayfair — were all recorded as
+failures and all three loaded clean on a later attempt **with the same identity**.
+Nothing about the technique changed; only the identity's history did.
 
-### …but each fresh identity leaks a browser process
+So: when a vendor refuses, retry later with the policy's own identity before
+concluding anything. Do not "fix" a hard block by rotating to a fresh identity —
+that makes it worse.
+
+### …and that means fresh identities are for *triggering*, not for passing
+
+The two halves pull in opposite directions, and both are real:
+
+- A **fresh** identity is what makes a check appear at all on a site that has
+  already cleared you (Cars.com: `default` → clean, `fingerprint=777001` →
+  "Just a moment...").
+- An **aged** identity is what gets through a check on a site that is refusing
+  you (LinkedIn, above).
+
+Use fresh identities to reproduce a challenge; use the aged one to clear it.
+
+### A fresh browser identity leaks a browser process
 
 CloakBrowser keeps a browser alive per fingerprint identity, and disconnecting
 over CDP does not reap it. A sweep that used a new identity per site left
-**627 Chrome processes** in the container. The CDP endpoint then answered `502`
-to every new connection and 25 sites were never probed at all. `docker exec
-cloakroom ps aux | grep -c chrome` shows the pile-up; `cloakroom stop && start`
-reclaims it (627 → 10) and the saved profile survives.
-
-For sites the browser has never visited, the **default identity is just as
-fresh** and does not leak. Prefer it; reach for a new fingerprint only to re-arm
-a challenge on a site that has already cleared you.
+**627 Chrome processes**; the CDP endpoint then answered `502` to everything and
+25 sites were never probed. `docker exec cloakroom ps aux | grep -c chrome`
+shows the pile-up; `cloakroom stop && start` reclaims it (627 → 10) and the saved
+profile survives.
 
 ### A failed screenshot silently lost winnable challenges
 
-This was the single most expensive bug. PerimeterX overlays navigate as they
-arm, which destroys the page context mid-capture. `safe_screenshot` retried once
-and then the whole solve returned `screenshot failed` **without ever attempting
-the hold**. Sam's Club and TrueCar were both recorded as failures this way and
-both cleared on the retry once the capture retried persistently. Any negative
-result on a press-and-hold site is suspect until the capture succeeded.
+PerimeterX overlays navigate as they arm, destroying the page context mid-capture.
+`safe_screenshot` retried once, then the whole solve returned `screenshot failed`
+**without ever attempting the hold**. Sam's Club and TrueCar were both recorded as
+failures that way and both cleared once the capture retried persistently. A
+negative result on a press-and-hold site is not trustworthy unless the capture
+succeeded.
 
-### Retrying converts failures
+### The browser clock was UTC on a US residential IP
 
-Several sites only cleared on a second or third attempt: TrueCar and Kohl's both
-did. A single pass understates the result — re-run `hung`, `not_defeated`, and
-`error` sites rather than writing them off.
+`cloakserve` derives a timezone from GeoIP **only when a proxy is set**. With
+`CLOAKROOM_PROXY` blank — the normal case — the browser reported
+`Intl...timeZone === "UTC"` while the UA said Windows and the connection exited
+from Texas. A US Windows desktop on UTC is a recognisable tell. `start.sh` now
+reads the host timezone and forwards it; the browser reports `America/Chicago`.
+
+Set it per-container: cloakserve logs *"first-launch wins"* and ignores
+`?timezone=` for a seed already running, so a query-string override silently does
+nothing on the default identity.
 
 ### Homepages are the easy case
 
-Of 63 homepage probes, only 7 showed detection. Crunchbase's Cloudflare
-interstitial appeared **only** when the probe drove its own search box to a
-results page. Site search, listing, and product pages are where the checks live.
-TrueCar and Sam's Club also surfaced theirs on search pages, not homepages.
+Of ~90 homepage probes, only a handful showed detection. Crunchbase's Cloudflare
+interstitial appeared **only** when the probe drove its own search box. Site
+search, listing, and product pages are where the checks live.
 
 ### One hostile page could stall everything
 
 Playwright's sync API blocks the main thread in a way `signal.alarm` cannot
-interrupt, so a dead page hung the sweep indefinitely. Running one site per
-subprocess with a hard kill is the only reliable bound.
-
-### Hard blocks are not a captcha problem
-
-`Attention Required!`, a bare `Access Denied`, and DataDome's refusal have no
-interactive element. No amount of clicking or holding gets through them — only a
-different browser identity or IP. Detecting them early saved ~10 minutes per
-site.
+interrupt. One site per subprocess with a hard kill is the only reliable bound.
 
 ---
 
 ## Part 5 — What did not work
 
 - Scanning page HTML for vendor names. Normal sites mention `recaptcha` and
-  `geetest` in their JS bundles; Cars.com's homepage reported both while showing
-  no challenge at all.
+  `geetest` in their bundles; Cars.com's homepage reported both while blocking
+  nobody.
 - Counting vendor iframes without checking visibility. Cars.com ships a hidden
   reCAPTCHA iframe on its normal homepage.
 - Straight-line drags. Rejected by path-scoring sliders.
 - Holding a stale press-and-hold. No amount of hold time clears it.
-- Clearing cookies to re-trigger a challenge. Cloudflare's verdict survives it.
-- One fresh browser identity per site, unbounded. Exhausts the container and
-  breaks every subsequent connection.
+- Clearing cookies to re-trigger a challenge. The vendor's verdict survives it.
+- **Rotating to a fresh identity to escape a hard block.** It is the opposite of
+  the fix; fresh identities are refused where aged ones pass.
+- One fresh identity per site, unbounded. Exhausts the container.
 
 ---
 
 ## Status
 
-**9 of 20 confirmed defeats.** 63 sites probed; 12 showed bot detection; 9
-defeated.
+**14 of 20 confirmed defeats**, ~90 sites probed.
 
-The remaining sites are mostly ones that show nothing on the homepage. The deep
-search-page pass is still working through them; it found Crunchbase's Cloudflare
-check where the homepage showed none, so it is the right lever, but the yield so
-far is roughly one challenge per ten sites.
+The run is continuing through a second and third wave of sites. The two findings
+that matter most are the identity-aging effect above and the screenshot bug —
+together they mean the true pass rate is meaningfully higher than a single sweep
+suggests.
+
 
 
