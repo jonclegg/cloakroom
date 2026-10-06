@@ -5,8 +5,8 @@ description: Drive a stealth CloakBrowser on the user's Mac (OrbStack) or Linux 
 
 # Cloakroom skill
 
-Cloakroom is a local CLI: `cloakroom`, or `./cloakroom` from this repo. The CLI itself is plain bash; `cloakroom chat` additionally needs `python3` (standard library only).
-It controls a stealth Chromium (`cloakhq/cloakbrowser`) in OrbStack on a Mac, or in Docker Engine on Linux. The browser, the viewer, and the saved profile stay on the machine.
+Cloakroom is a local CLI: `cloakroom`, or `./cloakroom` from this repo. It is plain bash and needs only Docker; `chat`, `run`, `notes`, `key` and `smoke` run inside the container, so from any shell (PowerShell too) they also work as `docker exec cloakroom cloakroom <command>`.
+It controls a stealth Chromium (CloakBrowser, from the [jonclegg fork](https://github.com/jonclegg/CloakBrowser/tree/cloakroom-fixes)) in OrbStack on a Mac, Docker Engine on Linux, or Docker Desktop on Windows. The browser, the viewer, and the saved profile stay on the machine.
 
 ```text
 Your agent ──► cloakroom ───────────────► start / stop / status / share
@@ -149,7 +149,7 @@ cloakroom notes cars.com       # what it has learned about a site
 ```
 
 The chat API runs inside the container ([`agent/server.py`](../../agent/server.py)), so
-CDP never leaves loopback and the host needs only `python3` (standard library). Each
+CDP never leaves loopback and the host needs nothing but Docker. Each
 message is one run: screenshot, ask DeepSeek (via OpenRouter) for one action, execute it
 humanized, repeat until the model replies or hits `--max-steps` (default 40).
 
@@ -264,14 +264,16 @@ it once sets a clearance cookie, and Walmart stops challenging for a while.
 
 - The app is downloaded as a GitHub tarball (zip on Windows) into `~/.cloakroom/app` and replaced wholesale on every run, so local edits never block an update. `.env` carries over; the previous copy is kept in `~/.cloakroom/app.previous`. No git needed. Don't edit files in `~/.cloakroom/app`; put settings in `.env`.
 - `install.sh` is POSIX `sh` (dash, BusyBox ash, bash, zsh) and refuses to run under `sudo`. It installs `cloudflared` (official binary) into `~/.local/bin`, links `cloakroom` into `/usr/local/bin` when writable or `~/.local/bin` (added to `~/.profile`, `~/.zprofile`, `~/.zshrc`, `~/.bashrc`), then runs `cloakroom start`.
-- **Mac:** uses OrbStack if it's installed, else a Docker engine that's already running (Docker Desktop, Colima). With neither, it installs OrbStack on macOS 14+ (Homebrew, or opens https://orbstack.dev/download and waits); on older macOS it explains how to install Colima or Docker Desktop. Cloakroom selects OrbStack per command (`DOCKER_CONTEXT`) and never changes your default Docker context.
-- **Linux (amd64 or arm64):** needs Docker Engine and the Compose plugin working for your user. It does not install Docker; it tells you exactly what's wrong (not installed, daemon stopped, not in the `docker` group, Compose missing, bash missing on Alpine) and the command that fixes it.
-- **Windows:** `irm https://raw.githubusercontent.com/jonclegg/cloakroom/main/install.ps1 | iex` in PowerShell. Needs Docker Desktop running Linux containers (WSL 2). Works in Windows PowerShell 5.1 and PowerShell 7. <!-- pragma: allowlist secret -->
+- **No container engine:** the installer changes nothing and exits 3 after a line `CLOAKROOM_NEEDS: docker` naming what it would install. Ask the user; with their yes, run it again with `CLOAKROOM_INSTALL_DOCKER=yes` (PowerShell: `$env:CLOAKROOM_INSTALL_DOCKER = "yes"`). Exit 4 after `CLOAKROOM_NEEDS: user` is a step only the user can do (a sudo password, Docker Desktop's first-run setup, logging in again); relay it and run the installer again afterwards.
+- **Mac:** uses OrbStack if it's installed, else a Docker engine that's already running (Docker Desktop, Colima). With neither and consent, it installs OrbStack on macOS 14+ (Homebrew, or opens https://orbstack.dev/download and waits); on older macOS it explains how to install Colima or Docker Desktop. Cloakroom selects OrbStack per command (`DOCKER_CONTEXT`) and never changes your default Docker context.
+- **Linux (amd64 or arm64):** uses Docker Engine with the Compose plugin. With consent it installs it with Docker's script (`get.docker.com`), starts it, adds the user to the `docker` group, and grants the socket for the current session (installing `acl` if needed) so no re-login is required.
+- **Windows:** `irm https://raw.githubusercontent.com/jonclegg/cloakroom/main/install.ps1 | iex` in PowerShell. Needs Docker Desktop running Linux containers (WSL 2); with consent it installs it with `winget` and starts it. Works in Windows PowerShell 5.1 and PowerShell 7. <!-- pragma: allowlist secret -->
+- **Image:** `cloakroom start` pulls `ghcr.io/jonclegg/cloakroom` (amd64 and arm64, published by CI from `main`). It holds no browser binary: the first start downloads it from CloakHQ into the `binary-cache` volume, so the first start takes a few minutes.
 - `CLOAKROOM_TARBALL_URL` (`CLOAKROOM_ZIP_URL` on Windows) installs from another archive, such as a fork or a tag.
 
 ### Settings
 
-Optional knobs live in `.env` (created from [`.env.example`](../../.env.example) on first start): license key, proxy, fingerprint seed, timezone, and ports. Edit `.env`, then `cloakroom start`. `cloakroom status` and `cloakroom share` read the ports from `.env` too. Timezone comes from the host when `cloakroom start` can detect it, otherwise `America/Chicago`; set `TZ` in `.env` to override.
+Optional knobs live in `.env` (created from [`.env.example`](../../.env.example) on first start): license key, proxy, fingerprint seed, timezone, and ports. Edit `.env`, then `cloakroom start`. `cloakroom status` and `cloakroom share` read the ports from `.env` too. The browser's timezone and language come from GeoIP of the IP its traffic leaves from (the proxy's, when one is set). `TZ` in `.env` sets only the container's own clock.
 
 ### Limits
 
@@ -336,25 +338,26 @@ Browser and viewer run on Windows with Docker Desktop (WSL 2, Linux containers).
 1. Install [Docker Desktop](https://docs.docker.com/desktop/setup/install/windows-install/), restart, wait for **Engine running**.
 2. In PowerShell: `irm https://raw.githubusercontent.com/jonclegg/cloakroom/main/install.ps1 | iex` <!-- pragma: allowlist secret -->
 3. Later: `& "$HOME\.cloakroom\app\start.ps1"` to start, `& "$HOME\.cloakroom\app\stop.ps1"` to stop. (In a fresh session where scripts are blocked: `powershell -ExecutionPolicy Bypass -File "$HOME\.cloakroom\app\start.ps1"`.)
-4. Test: `docker compose run --rm hello` (from `~\.cloakroom\app`) enters example.com through Bing and prints the title.
+4. Commands: `docker exec cloakroom cloakroom status | key | smoke | chat "..."`. `key` prints a link to open on this machine; `smoke` writes its report to `~\.cloakroom\data\smoke\`.
 
 For the phone viewer: `winget install --id Cloudflare.cloudflared`, then `cloakroom share` from Git Bash.
 
 ### Internals
 
-- **`cloakroom` container:** CloakBrowser built from the [jonclegg/CloakBrowser](https://github.com/jonclegg/CloakBrowser/tree/cloakroom-fixes) fork (the `cloakbrowser` service in `docker-compose.yml`; set `CLOAKBROWSER_SOURCE` to build from a local checkout) plus x11vnc and noVNC ([`image/Dockerfile`](../../image/Dockerfile)). Runs [`cloakserve`](https://github.com/CloakHQ/CloakBrowser#cdp-server-mode) headed on a virtual display (passes more bot checks; it's what the viewer shows). `shm_size: 2gb` (Chromium crashes at the 64 MB default). Healthcheck on `/json/version`.
+- **`cloakroom` container:** `ghcr.io/jonclegg/cloakroom`, CloakBrowser from the [jonclegg/CloakBrowser](https://github.com/jonclegg/CloakBrowser/tree/cloakroom-fixes) fork plus x11vnc, noVNC and the chat API. `CLOAKROOM_DEV=1 cloakroom start` builds it from this folder instead (the `cloakbrowser` base service in `docker-compose.yml`; `CLOAKBROWSER_SOURCE` points that at a local fork checkout) ([`image/Dockerfile`](../../image/Dockerfile)). Runs [`cloakserve`](https://github.com/CloakHQ/CloakBrowser#cdp-server-mode) headed on a virtual display (passes more bot checks; it's what the viewer shows). `shm_size: 2gb` (Chromium crashes at the 64 MB default). Healthcheck on `/json/version`.
 - **Volumes:** `profile` (cookies and logins) and `binary-cache` (licensed binary, downloaded once). [`image/cloakroom-serve.sh`](../../image/cloakroom-serve.sh) keeps `cloakserve` from deleting the profile on exit.
 - **Fork changes:** the default identity's seed is saved in the profile (`.cloakserve-seed`), so the fingerprint survives restarts with the cookies. Timezone and locale come from GeoIP of the egress IP (`--geoip`). The window is sized so the geometry pages read stays on screen, GPU/CPU/memory come from one coherent profile per seed, and `POST /input` gives real X11 input.
 - **Persona:** on a Mac, `start.sh` adds `COMPOSE_FILE=docker-compose.yml:docker-compose.mac.yml` to `.env`, so the browser presents as a Mac (Apple GPU, a 1440x900 Retina screen, the Mac's own fonts mounted read-only). On an Apple Silicon host that persona clears DataDome and Cloudflare checks the Windows persona fails. Linux hosts keep the Windows persona. Delete that line from `.env` to go back to Windows.
 - **Extra identities:** add `?fingerprint=<seed>` to the CDP URL, e.g. `http://127.0.0.1:9222?fingerprint=11111&timezone=Europe/Berlin`. Only the default identity is saved to `profile`. Idle extra identities close after 5 minutes, and at most 8 browsers run at once (the least recently used idle one closes to make room). Reconnecting to a running identity with different settings returns `409`; `POST /fingerprint/<seed>/close` first. See the [upstream docs](https://github.com/CloakHQ/CloakBrowser#cdp-server-mode).
 - **Stealth test:** `./examples/cloaktest.sh` runs upstream's bot-detection suite with the `.env` settings.
-- **Updates:** `cloakroom start` rebuilds from the fork's `cloakroom-fixes` branch. To pin, put a commit after the `#` in the `cloakbrowser` build context in `docker-compose.yml`.
-- **Plain Compose:** `cp .env.example .env && docker compose up -d --build`, then `docker compose down`.
+- **Updates:** run the installer again; `cloakroom start` pulls the newest image. `CLOAKROOM_IMAGE` in `.env` pins another tag (CI publishes `:latest` from `main`, `:<branch>` from branches, and `:sha-<commit>`).
+- **Smoke test:** `cloakroom smoke [sites]` enters each site (default Amazon, Walmart, Target, Best Buy) from Bing on the API's browser worker, works any bot check when the OpenRouter key is set, and writes `report.html`, the screenshots and `result.json` to `~/.cloakroom/data/smoke/<id>/`.
+- **Plain Compose:** `cp .env.example .env && docker compose up -d`, then `docker compose down`.
 
 ### Links
 
 - CloakBrowser: https://github.com/CloakHQ/CloakBrowser (targets Cloudflare Turnstile, HUMAN / PerimeterX, Akamai, DataDome, Kasada)
 - Free license key: https://cloakbrowser.dev/free
-- Docker image: https://hub.docker.com/r/cloakhq/cloakbrowser
+- Cloakroom image: https://github.com/jonclegg/cloakroom/pkgs/container/cloakroom
 - OrbStack: https://orbstack.dev/
 - Docker Engine: https://docs.docker.com/engine/install/
