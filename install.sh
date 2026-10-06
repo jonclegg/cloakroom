@@ -8,6 +8,12 @@
 # previous copy is kept in ~/.cloakroom/app.previous. Your .env settings carry over.
 #
 # Optional: CLOAKROOM_TARBALL_URL installs from another tarball (a fork, branch or tag).
+#
+# For agents running this for a user: without a container engine the installer
+# changes nothing and exits 3 after a line starting "CLOAKROOM_NEEDS: docker".
+# Ask the user whether to install one, and if they agree, run it again with
+# CLOAKROOM_INSTALL_DOCKER=yes. Exit 4 ("CLOAKROOM_NEEDS: user") means a step
+# only the user can do (a sudo password, a log out and in); it says which.
 set -eu
 
 TARBALL_URL="${CLOAKROOM_TARBALL_URL:-https://github.com/jonclegg/cloakroom/archive/refs/heads/main.tar.gz}" # // pragma: allowlist secret
@@ -15,11 +21,41 @@ STATE_DIR="${HOME:-}/.cloakroom"
 INSTALL_DIR="${STATE_DIR}/app"
 ORBSTACK_DOWNLOAD="https://orbstack.dev/download"
 ORBSTACK_MIN_MACOS=14
-DOCKER_DOCS="https://docs.docker.com/engine/install/"
 
 fail() {
   printf '\nProblem: %s\n\n' "$1" >&2
   exit 1
+}
+
+# No container engine and no consent to install one: change nothing, say what
+# would be installed, and let the agent ask the user.
+needs_docker() {
+  printf '\nCLOAKROOM_NEEDS: docker\n%s\n\nTo install it, run this installer again with CLOAKROOM_INSTALL_DOCKER=yes:\n  curl -fsSL https://raw.githubusercontent.com/jonclegg/cloakroom/main/install.sh | CLOAKROOM_INSTALL_DOCKER=yes sh\n\n' "$1" >&2 # // pragma: allowlist secret
+  exit 3
+}
+
+# A step only the user can do.
+needs_user() {
+  printf '\nCLOAKROOM_NEEDS: user\n%s\n\n' "$1" >&2
+  exit 4
+}
+
+install_docker_consented() {
+  [ "${CLOAKROOM_INSTALL_DOCKER:-}" = yes ]
+}
+
+# sudo that never hangs on a password prompt nobody can see.
+can_sudo() {
+  [ "$(id -u)" = 0 ] && return 0
+  command -v sudo >/dev/null 2>&1 || return 1
+  sudo -n true 2>/dev/null && return 0
+  # A terminal the user can type a password into (none when an agent runs this).
+  # shellcheck disable=SC2024  # the redirect is the point: sudo prompts on the tty
+  [ -r /dev/tty ] && sudo -v </dev/tty 2>/dev/null
+}
+
+as_root() {
+  if [ "$(id -u)" = 0 ]; then "$@"; else sudo "$@"; fi
 }
 
 say() {
@@ -110,6 +146,9 @@ Install a Docker engine that supports your macOS, start it, then run this instal
   Docker Desktop:  https://docs.docker.com/desktop/setup/install/mac-install/
 Make sure 'docker info' and 'docker compose version' both work."
   fi
+  install_docker_consented || needs_docker "Cloakroom runs its browser in a container, and this Mac has no container engine.
+It would install OrbStack, a lightweight container engine for macOS (free for personal use):
+  https://orbstack.dev"
   say "Cloakroom runs its browser in a container. Installing OrbStack, a lightweight container engine for macOS."
   if have_brew; then
     say "Installing OrbStack with Homebrew..."
@@ -141,18 +180,51 @@ linux_arch_ok() {
   esac
 }
 
+# shellcheck disable=SC2016  # shown to the user literally
+LINUX_DOCKER_COMMANDS='curl -fsSL https://get.docker.com | sudo sh
+  sudo systemctl enable --now docker
+  sudo usermod -aG docker "$USER"'
+
+# Docker Engine from Docker's own install script, with the user's consent.
+install_linux_docker() {
+  can_sudo || needs_user "Installing Docker needs administrator rights, and sudo can't ask for a password here.
+Run these in your own terminal, then run the Cloakroom installer again:
+  ${LINUX_DOCKER_COMMANDS}"
+  say "Installing Docker Engine with Docker's install script (https://get.docker.com)..."
+  curl -fsSL --retry 3 https://get.docker.com | as_root sh
+  enable_linux_docker
+}
+
+# Start the daemon and let this user reach it. The docker group only applies
+# after logging in again, so also grant this user the socket for this session.
+enable_linux_docker() {
+  if command -v systemctl >/dev/null 2>&1; then
+    as_root systemctl enable --now docker
+  elif command -v rc-update >/dev/null 2>&1; then
+    as_root rc-update add docker && as_root service docker start
+  else
+    as_root service docker start
+  fi
+  user_name="$(id -un)"
+  if [ "$user_name" != root ]; then
+    as_root usermod -aG docker "$user_name" 2>/dev/null || as_root addgroup "$user_name" docker
+    if command -v setfacl >/dev/null 2>&1; then
+      as_root setfacl -m "user:${user_name}:rw" /var/run/docker.sock
+    fi
+  fi
+}
+
+linux_docker_info() {
+  if command -v timeout >/dev/null 2>&1; then
+    timeout 30 docker info 2>&1
+  else
+    docker info 2>&1
+  fi
+}
+
 ensure_linux_docker() {
   linux_arch_ok || fail "Cloakroom on Linux supports amd64 (x86_64) and arm64 (aarch64). This machine is $(uname -m)."
   need bash "Cloakroom's commands are bash scripts. Install bash (for example 'sudo apk add bash' on Alpine), then run this again."
-  if ! command -v docker >/dev/null 2>&1; then
-    fail "Docker Engine is not installed.
-Install it with Docker's script (or see ${DOCKER_DOCS}):
-  curl -fsSL https://get.docker.com | sudo sh
-  sudo usermod -aG docker \"\$USER\"
-(Alpine: sudo apk add docker docker-cli-compose && sudo rc-update add docker && sudo service docker start
- && sudo addgroup \"\$USER\" docker)
-Then log out and back in (so the docker group applies) and run this installer again."
-  fi
   if docker_is_podman; then
     fail "The 'docker' command here is Podman's Docker emulation (podman-docker), and Cloakroom needs Docker Engine.
 Replace it with Docker Engine, then run this installer again:
@@ -160,23 +232,27 @@ Replace it with Docker Engine, then run this installer again:
   curl -fsSL https://get.docker.com | sudo sh
   sudo usermod -aG docker \"\$USER\"   then log out and back in"
   fi
-  if command -v timeout >/dev/null 2>&1; then
-    info="$(timeout 30 docker info 2>&1)" && status=0 || status=$?
-  else
-    info="$(docker info 2>&1)" && status=0 || status=$?
+  if ! command -v docker >/dev/null 2>&1; then
+    install_docker_consented || needs_docker "Cloakroom runs its browser in a container, and Docker Engine is not installed.
+It would install Docker Engine with Docker's official script and let this user use it:
+  ${LINUX_DOCKER_COMMANDS}"
+    install_linux_docker
   fi
+  info="$(linux_docker_info)" && status=0 || status=$?
   if [ "$status" -ne 0 ]; then
     case "$info" in
-      *"permission denied"*)
-        fail "Docker is installed, but this user can't use it (permission denied on the Docker socket).
-Add yourself to the docker group, then log out and back in:
-  sudo usermod -aG docker \"\$USER\"      (Alpine: sudo addgroup \"\$USER\" docker)
-Check with 'docker info', then run this installer again."
-        ;;
-      *"Cannot connect"*|*"Is the docker daemon running"*|*"No such file"*)
-        fail "Docker is installed, but its daemon isn't running.
-Start it (and enable it at boot), then run this installer again:
-  sudo systemctl enable --now docker"
+      *"permission denied"*|*"Cannot connect"*|*"Is the docker daemon running"*|*"No such file"*)
+        install_docker_consented || needs_docker "Docker is installed but this user can't use it yet:
+${info}
+It would start Docker and add this user to the docker group (needs sudo)."
+        can_sudo || needs_user "Docker needs to be started and this user added to the docker group, and sudo can't ask for a password here.
+Run these in your own terminal, then run the Cloakroom installer again:
+  sudo systemctl enable --now docker
+  sudo usermod -aG docker \"\$USER\""
+        enable_linux_docker
+        info="$(linux_docker_info)" || needs_user "Docker is set up, but this session still can't reach it:
+${info}
+Log out and back in (so the docker group applies), then run the Cloakroom installer again."
         ;;
       *)
         if [ "$status" -eq 124 ]; then

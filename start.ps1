@@ -37,16 +37,26 @@ if (-not (Test-Path .env)) {
     Write-Host "Created .env with default settings (edit it later to add a license key or proxy)."
 }
 
-Write-Host "1/3 Building CloakBrowser (first time can take a few minutes)..."
-Invoke-Docker compose pull hello --quiet
-Invoke-Docker compose build --quiet cloakroom
+# The API writes notes, run logs, photos and smoke reports here. Compose needs it
+# spelled out: Windows has no HOME variable for docker-compose.yml to use.
+if (-not $env:CLOAKROOM_DATA_DIR) { $env:CLOAKROOM_DATA_DIR = Join-Path $HOME ".cloakroom\data" }
+New-Item -ItemType Directory -Force -Path $env:CLOAKROOM_DATA_DIR | Out-Null
+
+if ($env:CLOAKROOM_DEV -eq "1") {
+    Write-Host "1/3 Building Cloakroom from this folder (CLOAKROOM_DEV=1)..."
+    Invoke-Docker compose build --quiet cloakroom
+} else {
+    Write-Host "1/3 Downloading Cloakroom (first time can take a few minutes)..."
+    Invoke-Docker compose pull --quiet cloakroom
+}
 
 Write-Host "2/3 Starting the browser..."
 Invoke-Docker compose up -d --force-recreate cloakroom
 
+# The first start also downloads the browser itself from CloakHQ (~150 MB).
 Write-Host "3/3 Waiting for the browser to be ready..."
 $status = "missing"
-for ($i = 0; $i -lt 150; $i++) {
+for ($i = 0; $i -lt 300; $i++) {
     $status = (docker inspect -f "{{.State.Health.Status}}" cloakroom 2>$null)
     if ($status -eq "healthy") { break }
     Start-Sleep -Seconds 2
@@ -59,13 +69,18 @@ if ($status -ne "healthy") {
 
 $viewerUrl = "http://" + (docker compose port cloakroom 6080)
 $cdpUrl = "http://" + (docker compose port cloakroom 9222)
+$apiUrl = "http://" + (docker compose port cloakroom 8423)
 
 Write-Host ""
 Write-Host "You're ready!" -ForegroundColor Green
 Write-Host ""
 Write-Host "  See the browser:    $viewerUrl"
-Write-Host "  Try an example:     docker compose run --rm hello"
+Write-Host "  Chat with it:       docker exec cloakroom cloakroom chat `"<message>`"   (API $apiUrl)"
 Write-Host "  Stop everything:    .\stop.ps1"
+Write-Host ""
+Write-Host "  Next: docker exec cloakroom cloakroom key     (open the link it prints and paste your OpenRouter key)"
+Write-Host "        docker exec cloakroom cloakroom smoke   (check it can reach Amazon, Walmart, Target and Best Buy;"
+Write-Host "                                                 the report is in $env:CLOAKROOM_DATA_DIR\smoke)"
 Write-Host ""
 Write-Host "  For scripts (Playwright, Puppeteer): $cdpUrl"
 Write-Host "  Only this computer can connect. Your logins are kept between restarts."
