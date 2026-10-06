@@ -42,12 +42,41 @@ CDP_URL = os.environ.get("CDP_URL", "http://127.0.0.1:9222")
 
 BLOCK_PATTERNS = {
     "press_and_hold": r"press\s*(&|and)\s*hold|activate and hold",
-    "image_captcha": r"recaptcha|hcaptcha|turnstile|select all images",
+    "image_captcha": r"select all images|select each image|click all (images|squares)",
     "slider": r"slide to verify|drag the slider",
     "robot_or_human": r"robot or human",
     "access_denied": r"access denied|reference\s*#\s*\d",
-    "blocked_url": r"/blocked|/sorry/|/challenge",
+    "blocked_url": r"/blocked|/sorry/|/challenge|/cdn-cgi/challenge",
 }
+
+# Vendor markers. Only *frame URLs* and real *widget elements* count: a normal
+# page routinely mentions recaptcha or geetest inside its JS bundles, so matching
+# raw page HTML produces false positives (Cars.com's homepage does exactly that).
+# Kept for reference; visible widgets are what count.
+VENDOR_FRAMES = {
+    "cloudflare_turnstile": r"challenges\.cloudflare\.com",
+    "recaptcha": r"google\.com/recaptcha|gstatic\.com/recaptcha",
+    "hcaptcha": r"hcaptcha\.com",
+    "perimeterx": r"px-cloud\.net|captcha\.px",
+    "geetest": r"geetest\.com",
+    "datadome": r"datadome\.co",
+    "kasada": r"kasada",
+}
+
+VENDOR_WIDGETS = {
+    "cloudflare_turnstile": "iframe[src*='challenges.cloudflare.com'], .cf-turnstile, #cf-chl-widget",
+    "recaptcha": "iframe[src*='recaptcha'], .g-recaptcha, #recaptcha",
+    "hcaptcha": "iframe[src*='hcaptcha'], .h-captcha",
+    "perimeterx": "#px-captcha",
+    "geetest": ".geetest_panel, .geetest_holder, [class*='geetest_']",
+    "datadome": "#datadome-captcha, [class*='datadome']",
+}
+
+INTERSTITIAL_TEXT = (
+    r"just a moment|checking your browser|enable javascript and cookies|"
+    r"verifying you are human|verify you are human|attention required|"
+    r"performing security verification|one more step|ddos protection by"
+)
 
 HINT_SELECTOR = (
     "button, a[href], input:not([type=hidden]), select, textarea, "
@@ -191,35 +220,92 @@ def safe_screenshot(page, path, timeout=15000):
 
 
 def detect_block(page):
-    """Cheap DOM-side block check, independent of the model."""
+    """DOM-side block check, independent of the model.
+
+    Challenge text and vendor widgets usually live in a cross-origin iframe, so
+    scanning `body` alone misses them: Cloudflare's "Just a moment..." puts the
+    wording in the <title>, not the body. This checks the title and body text,
+    the URL, every frame's URL, and the real challenge widget elements.
+    """
     import re
 
     url = (page.url or "").lower()
-    try:
-        text = page.inner_text("body").lower()
-    except Exception:  # noqa: BLE001
-        text = ""
     found = []
+
+    try:
+        title = page.title() or ""
+    except Exception:  # noqa: BLE001
+        title = ""
+    try:
+        body = page.inner_text("body")
+    except Exception:  # noqa: BLE001
+        body = ""
+    text = (title + "\n" + body).lower()
+
+    # Cross-origin frames: their body text is worth reading too.
+    frame_texts = []
+    frame_urls = []
+    for frame in page.frames:
+        try:
+            frame_urls.append(frame.url or "")
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            loc = frame.locator("body")
+            if loc.count():
+                frame_texts.append(loc.inner_text() or "")
+        except Exception:  # noqa: BLE001
+            continue
+    all_text = (text + "\n" + "\n".join(frame_texts)).lower()
+
     for name, pat in BLOCK_PATTERNS.items():
         if name == "blocked_url":
             if re.search(pat, url):
                 found.append(name)
-        elif re.search(pat, text):
+        elif re.search(pat, all_text):
             found.append(name)
-    for frame in page.frames:
-        try:
-            if frame.locator("#px-captcha").count():
-                found.append("press_and_hold")
+
+    if re.search(INTERSTITIAL_TEXT, all_text):
+        found.append("cloudflare_interstitial")
+        found.append("blocked")
+
+    # Only a *visible* vendor widget is a challenge. Cars.com ships a hidden
+    # recaptcha iframe on its normal homepage; an invisible frame or a passive
+    # v3 badge is not something the user has to solve.
+    for name, sel in VENDOR_WIDGETS.items():
+        for frame in page.frames:
+            try:
+                loc = frame.locator(sel)
+                count = min(loc.count(), 4)
+            except Exception:  # noqa: BLE001
+                continue
+            hit = False
+            for i in range(count):
+                try:
+                    el = loc.nth(i)
+                    if not el.is_visible():
+                        continue
+                    box = el.bounding_box()
+                    if not box or box["width"] < 60 or box["height"] < 30:
+                        continue
+                    found.append(name)
+                    hit = True
+                    break
+                except Exception:  # noqa: BLE001
+                    continue
+            if hit:
                 break
-        except Exception:  # noqa: BLE001
-            continue
+
     return sorted(set(found))
 
 
 def decide(page, shot, goal, history, model):
     size = png_size(shot)
     dims = f"{size[0]}x{size[1]} pixels" if size else "unknown"
-    vp = page.evaluate("({w: innerWidth, h: innerHeight, dpr: devicePixelRatio})")
+    try:
+        vp = page.evaluate("({w: innerWidth, h: innerHeight, dpr: devicePixelRatio})")
+    except Exception:  # noqa: BLE001 - page navigated mid-evaluate (challenges do)
+        vp = {"w": 1280, "h": 720, "dpr": 1}
     hints = dom_hints(page)
     prompt = (
         f"You are operating a real Chrome browser. Goal: {goal}\n"
@@ -363,7 +449,10 @@ def execute(page, d, page_factory):
         import bing_first
 
         before = set(page.context.pages)
-        landed = bing_first.open_via_bing(page, text.strip())
+        try:
+            landed = bing_first.open_via_bing(page, text.strip())
+        except Exception as exc:  # noqa: BLE001
+            return f"open {text} failed: {str(exc)[:120]}", None
         for opened in page.context.pages:
             if opened not in before:
                 page_factory[0] = opened
@@ -386,14 +475,37 @@ def run(page, goal, model, max_steps, shots_dir):
     for step in range(max_steps):
         shot = os.path.join(shots_dir, f"step-{step:02d}.png")
         if not safe_screenshot(page, shot):
-            return history, "screenshot failed", page
-        decision = decide(page, shot, goal, history, model)
-        dom_blocks = detect_block(page)
+            # A challenge that is mid-navigation destroys the page context; give
+            # it a beat and try again rather than aborting the whole run.
+            humanize.pause(2.0, 3.0)
+            if not safe_screenshot(page, shot):
+                return history, "screenshot failed", page
+
+        try:
+            decision = decide(page, shot, goal, history, model)
+        except Exception as exc:  # noqa: BLE001
+            history.append({"step": step, "did": f"decide failed: {str(exc)[:120]}"})
+            humanize.pause(1.5, 2.5)
+            continue
+
+        try:
+            dom_blocks = detect_block(page)
+        except Exception:  # noqa: BLE001
+            dom_blocks = []
+
+        try:
+            url = page.url
+        except Exception:  # noqa: BLE001
+            url = "?"
+        try:
+            title = (page.title() or "")[:120]
+        except Exception:  # noqa: BLE001
+            title = ""
 
         record = {
             "step": step,
-            "url": page.url,
-            "title": (page.title() or "")[:120],
+            "url": url,
+            "title": title,
             "observation": decision.get("observation"),
             "action": decision.get("action"),
             "x": decision.get("x"),
@@ -412,7 +524,10 @@ def run(page, goal, model, max_steps, shots_dir):
             return history, None, page
 
         page_factory = [page]
-        log, landed = execute(page, decision, page_factory)
+        try:
+            log, landed = execute(page, decision, page_factory)
+        except Exception as exc:  # noqa: BLE001
+            log, landed = f"action failed: {str(exc)[:120]}", None
         record["did"] = log
         history.append(record)
         if landed is not None:
