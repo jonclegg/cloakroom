@@ -1,0 +1,1 @@
+- DataDome 'Bot or Not?' slider. Not beaten: try one drag, then reply blocked so the caller can solve it in the viewer.

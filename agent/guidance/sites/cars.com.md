@@ -1,0 +1,1 @@
+- Cloudflare interstitial on entry; it re-arms, so expect it on later visits too. It clears by itself or with a click on the Turnstile checkbox.

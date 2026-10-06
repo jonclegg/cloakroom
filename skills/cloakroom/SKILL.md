@@ -128,7 +128,7 @@ Every command takes `--json`.
 | `cloakroom status --json` | Is the container engine up, is the browser ready, and the viewer, CDP, and share URLs. Exits non-zero in text mode when not ready. |
 | `cloakroom chat "<message>"` | Talk to Cloakroom; it drives the browser with DeepSeek and replies. See below. |
 | `cloakroom run <id>` / `cancel <id>` | A run's steps, reply and files; or stop it. |
-| `cloakroom notes [site]` | What Cloakroom has learned, per site. |
+| `cloakroom notes [site]` | The guidance Cloakroom ships with, and what it has learned, per site. |
 | `cloakroom share --json` | Start a private HTTPS link to the viewer and print it. |
 | `cloakroom unshare` | Stop that link. It stops working immediately. |
 
@@ -173,6 +173,13 @@ through the browser session, one file per photo at its largest size). Saved file
 If one shrinks the window or closes Cloakroom's tab, the run maximizes the window or
 moves to another tab on the same site, and lists that under `repairs` in `cloakroom run <id>
 --json`. Avoid driving the session's tab yourself while a run is working it.
+
+**It starts with guidance.** [`agent/guidance/`](../../agent/guidance/) ships with Cloakroom: general
+rules for each kind of bot check, and a note for each of the 30 sites in
+[`docs/bot-detection-playbook.md`](../../docs/bot-detection-playbook.md) (what the check looks like, what
+beat it, whether it re-arms, and which ones are not worth spending steps on). The general
+rules are in every prompt. A site's note is added when the browser is on that site or a
+subdomain of it. Edit those files to change what every install starts with.
 
 **It keeps notes for itself.** During a run it can `remember` facts it will need later in
 that message (old steps scroll out of its prompt). When it learns something about a site

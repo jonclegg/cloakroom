@@ -313,11 +313,14 @@ def make_handler(cloakroom, token):
                 return self._send(200, cloakroom.status())
             if parts == ["v1", "notes"]:
                 return self._send(200, {"sites": cloakroom.notebook.sites(),
-                                        "general": cloakroom.notebook.notes_for("general", 1000)})
+                                        "general": cloakroom.notebook.notes_for("general", 1000),
+                                        "guided_sites": cloakroom.notebook.guided_sites(),
+                                        "guidance": cloakroom.notebook.guidance_for("general")})
             if len(parts) == 3 and parts[:2] == ["v1", "notes"]:
                 site = parts[2]
                 try:
                     return self._send(200, {"site": site,
+                                            "guidance": cloakroom.notebook.guidance_for(site),
                                             "notes": cloakroom.notebook.notes_for(site, 1000),
                                             "runs": cloakroom.notebook.runs_for(site, 1000)})
                 except ValueError as exc:

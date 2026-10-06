@@ -110,14 +110,17 @@ def main():
     if args.command == "notes":
         if args.site:
             result = call("GET", f"/v1/notes/{args.site}")
-            print(result["notes"] or "(no notes)")
+            print("Shipped guidance:\n" + (result["guidance"] or "(none)"))
+            print("\nLearned:\n" + (result["notes"] or "(none yet)"))
             print()
             for run in result["runs"]:
                 blocks = f"  bot checks: {', '.join(run['blocks'])}" if run["blocks"] else ""
                 print(f"{run['time'][:16]}  {run['status']:<11} {run['message'][:70]}{blocks}")
         else:
             result = call("GET", "/v1/notes")
-            print("\n".join(result["sites"]) or "(no sites yet)")
+            print("Learned notes: " + (", ".join(result["sites"]) or "none yet"))
+            print("Shipped guidance: " + ", ".join(result["guided_sites"]))
+            print("\nGeneral guidance:\n" + result["guidance"])
             if result["general"]:
                 print("\nGeneral:\n" + result["general"])
         return 0

@@ -1,0 +1,1 @@
+- Akamai 403, intermittent, and it re-arms. Wait and retry; it cleared later as the identity aged.

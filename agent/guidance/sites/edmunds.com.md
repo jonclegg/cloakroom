@@ -1,0 +1,1 @@
+- Akamai 403 that re-arms. It gave way on its own; wait and retry rather than clicking.

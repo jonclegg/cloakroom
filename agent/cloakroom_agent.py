@@ -330,7 +330,8 @@ def read_page(page):
             const label = (a.innerText || a.getAttribute('aria-label') || '').trim().replace(/\\s+/g, ' ');
             if (!label || seen.has(a.href) || !a.href.startsWith('http')) continue;
             seen.add(a.href);
-            links.push(label.slice(0, 80) + ' -> ' + a.href);
+            // Tracking parameters make some hrefs kilobytes long; the path is what matters.
+            links.push(label.slice(0, 80) + ' -> ' + a.href.slice(0, 200));
             if (links.length >= linkLimit) break;
           }
           return {text, links};
@@ -410,7 +411,8 @@ def decide(page, shot, turn, model):
         f"action per step, then reply to them.\n\n"
         f"Conversation so far:\n{_conversation_text(turn.conversation)}\n\n"
         f"Caller's latest message: {turn.message}\n\n"
-        f"Your notebook (lessons you wrote on earlier runs, and the run log):\n"
+        f"Your notebook (guidance that ships with Cloakroom, lessons you wrote on "
+        f"earlier runs, and the run log):\n"
         f"{turn.notebook.context_for(site)}\n\n"
         f"Your working memory for this message:\n{memory}\n\n"
         f"Step {len(turn.steps) + 1} of at most {turn.max_steps}. "
@@ -445,7 +447,8 @@ def decide(page, shot, turn, model):
         f"Keep notes for yourself. `remember` facts you will need later in this "
         f"message (listing URLs, prices, what you saved), because old steps scroll "
         f"out of view. Write a `note` when you learn something about a site that "
-        f"would save time next run: an obstacle, what got past it, where things are.\n"
+        f"would save time next run: an obstacle, what got past it, where things are. "
+        f"A note is about the site, not this message's answer (no prices or results).\n"
         f"If a bot check is on screen set blocked=true and name its block_type, then "
         f"work it with the right action:\n"
         f"- press_and_hold: action \"hold\" at the button centre, hold_ms at least 8000.\n"

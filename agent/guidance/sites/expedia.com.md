@@ -1,0 +1,1 @@
+- DataDome 'Bot or Not?' slider. Not beaten: an aimed, humanized drag is still rejected. Try once, then reply blocked so the caller can solve it in the viewer.

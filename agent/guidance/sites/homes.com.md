@@ -1,0 +1,1 @@
+- Akamai hard 403. Never gave way. Reply blocked rather than spending steps.

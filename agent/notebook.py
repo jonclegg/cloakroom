@@ -1,6 +1,11 @@
-"""Cloakroom's notebook: what it learned about each site, kept between runs.
+"""Cloakroom's notebook: what it knows about each site.
 
-Two kinds of entry per site, under <data>/notes/sites/:
+Guidance ships with Cloakroom in agent/guidance/ (general.md, and sites/<site>.md),
+distilled from the bot-detection playbook: what each site's check looks like and
+what beat it. It is read-only and updated with releases.
+
+What Cloakroom learns itself is kept between runs, two kinds of entry per site,
+under <data>/notes/sites/:
 
 * <site>.md     lessons the model wrote itself ("cars.com: the photo gallery opens
                 from the main image; Esc closes it").
@@ -9,7 +14,7 @@ Two kinds of entry per site, under <data>/notes/sites/:
 
 Lessons that are not about one site go to <data>/notes/general.md. Lookup is by
 exact domain: the browser's current host names the site, so there is nothing to
-search.
+search. A subdomain (m.walmart.com) also gets its parent site's entries.
 """
 
 from __future__ import annotations
@@ -25,8 +30,18 @@ GENERAL_SHOWN = 15
 RUNS_SHOWN = 5
 
 
+GUIDANCE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "guidance")
+
+
+def lookup_names(site):
+    """walmart.com for walmart.com; m.walmart.com, then walmart.com."""
+    labels = site.split(".")
+    return [".".join(labels[index:]) for index in range(len(labels) - 1)]
+
+
 class Notebook:
-    def __init__(self, data_dir):
+    def __init__(self, data_dir, guidance_dir=GUIDANCE_DIR):
+        self.guidance_dir = guidance_dir
         self.root = os.path.join(data_dir, "notes")
         self.sites_dir = os.path.join(self.root, "sites")
         os.makedirs(self.sites_dir, exist_ok=True)
@@ -62,17 +77,46 @@ class Notebook:
         with self.lock, open(path) as fh:
             return [json.loads(line) for line in fh.readlines()[-limit:]]
 
+    def guidance_for(self, site):
+        """Shipped guidance: general.md for "general", else the site's file or its parent's."""
+        if site == "general":
+            paths = [os.path.join(self.guidance_dir, "general.md")]
+        else:
+            paths = [os.path.join(self.guidance_dir, "sites", name + ".md") for name in lookup_names(site)]
+        for path in paths:
+            if os.path.exists(path):
+                with open(path) as fh:
+                    return fh.read().strip()
+        return ""
+
+    def guided_sites(self):
+        return sorted(name.removesuffix(".md") for name in os.listdir(os.path.join(self.guidance_dir, "sites")))
+
+    def _learned_site(self, site):
+        """The site name learned entries are filed under: the site, or a parent with entries."""
+        for name in lookup_names(site):
+            if os.path.exists(self._path(name, ".md")) or os.path.exists(self._path(name, ".jsonl")):
+                return name
+        return site
+
     def context_for(self, site):
         """The notebook section of the prompt for the site the browser is on."""
         parts = []
+        guidance = self.guidance_for("general")
+        if guidance:
+            parts.append(f"Guidance that ships with Cloakroom:\n{guidance}")
         general = self.notes_for("general", GENERAL_SHOWN)
         if general:
-            parts.append(f"General:\n{general}")
+            parts.append(f"Your general notes:\n{general}")
         if site:
-            notes = self.notes_for(site)
+            guidance = self.guidance_for(site)
+            if guidance:
+                parts.append(f"Guidance for {site}:\n{guidance}")
+            learned = self._learned_site(site)
+            notes = self.notes_for(learned)
             if notes:
-                parts.append(f"{site}:\n{notes}")
-            runs = self.runs_for(site)
+                parts.append(f"Your notes on {learned}:\n{notes}")
+            runs = self.runs_for(learned)
             if runs:
                 lines = [
                     f"- {run['time'][:16]} {run['status']}: {run['message'][:80]!r}"
