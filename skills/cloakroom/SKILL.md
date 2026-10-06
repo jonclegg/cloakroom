@@ -169,6 +169,11 @@ Bing-first `open`), and `save_images` (the photo gallery of the item on the page
 through the browser session, one file per photo at its largest size). Saved files are in
 `~/.cloakroom/data/runs/<run>/files/`, and the reply lists them.
 
+**Sharing the browser.** Other CDP clients can use the same browser while a run is going.
+If one shrinks the window or closes Cloakroom's tab, the run maximizes the window or
+moves to another tab on the same site, and lists that under `repairs` in `cloakroom run <id>
+--json`. Avoid driving the session's tab yourself while a run is working it.
+
 **It keeps notes for itself.** During a run it can `remember` facts it will need later in
 that message (old steps scroll out of its prompt). When it learns something about a site
 (a bot check and what cleared it, where a feature lives), it writes a `note` to that site's

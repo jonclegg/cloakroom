@@ -280,6 +280,8 @@ What shipped on `cloakroom-deepseek`, and where it departs from the proposal abo
 | Token in `~/.cloakroom/api-token` | `~/.cloakroom/data/api-token`. The data folder is bind-mounted at `/data`, and the API runs as the folder's owner so files are not root's on Linux. |
 | `cloakroom do` as a thin client | Replaced by `cloakroom chat`, `run`, `cancel`, `notes` ([`agent/client.py`](../agent/client.py), standard library). |
 | One run at a time | Same: one worker thread owns Playwright and drains a queue. Sessions idle out after 30 minutes and close their tab. |
+| — | Shared-browser repairs: other CDP clients can shrink the window or close the tab mid-run (seen on the Dell). Each step maximizes a shrunken window and replaces a closed tab, and the run lists those `repairs`. |
+| — | A stall check: three identical actions, or six steps on one URL using at most two different actions, puts a warning in the next prompt. |
 
 Open questions from section 11, as decided: port 8423; bypass is always on (there is no
 `allow_barrier_bypass` switch yet); the CLI requires the service; sessions idle out at 30
