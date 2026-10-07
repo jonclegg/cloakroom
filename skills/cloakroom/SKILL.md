@@ -217,6 +217,20 @@ http://127.0.0.1:8423/v1/chat` with `{"message": "...", "session": null}` and
 `Authorization: Bearer $(cat ~/.cloakroom/data/api-token)`. The other routes are listed at
 the top of [`agent/server.py`](../../agent/server.py).
 
+**Following progress without polling:** `GET /v1/events` is a Server-Sent Events stream of
+every state change, in order: `run.queued`, `run.started`, `run.step` (the step, its
+screenshot URL, and any files it saved), `run.finished` (status, reply, files, cost),
+`run.cancel_requested`, `session.created`, `session.expired`, `session.tab_lost`,
+`browser.connected`, `smoke.*` and `key.*`. `?run=<id>` or `?session=<id>` narrows it. To
+resume after a dropped connection, send the last `id` back as `Last-Event-ID` (or
+`?since=<id>`); if events were missed (the server restarted, or the reader fell more than
+5000 events behind) the stream says so with a `stream.gap` event, and you re-read the run
+with `GET /v1/runs/<id>`.
+
+```bash
+curl -N -H "Authorization: Bearer $(cat ~/.cloakroom/data/api-token)" "http://127.0.0.1:8423/v1/events?run=<run>"
+```
+
 **How it targets things.** Screenshots are captured at CSS scale, so one screenshot pixel is
 one CSS pixel, and the model is told the exact image size. Cloakroom also reads the visible
 interactive elements out of the DOM and hands the model their centre coordinates as hints.

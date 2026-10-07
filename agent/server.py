@@ -11,17 +11,26 @@
                                      and screenshot them (report.html in <data>/smoke/)
     GET  /v1/smoke/{id}
     GET  /v1/status
+    GET  /v1/events                  Server-Sent Events: every state change, in order.
+                                     ?run= or ?session= filters; resume with Last-Event-ID
+                                     (or ?since=<id>; ?since=0 replays what is still held)
     GET  /v1/health                  no token; for the container health check
 
 Every route but /v1/health needs `Authorization: Bearer <token>`; the token is
 <data>/api-token, created on first start. A session is one browser tab and the
 conversation in it. One browser has one mouse, so runs go through a single worker
 thread, which is also the only thread that touches Playwright.
+
+Every state change (a run queued, started, stepped or finished; a session created
+or expired; the browser connecting; a smoke test; the key setup) is published once
+to the event stream, so a caller or a dashboard subscribes once instead of polling.
 """
 
 from __future__ import annotations
 
+import collections
 import hmac
+import itertools
 import json
 import os
 import queue
@@ -49,6 +58,10 @@ CDP_URL = os.environ.get("CDP_URL", "http://127.0.0.1:9222")
 SESSION_IDLE_SECONDS = int(os.environ.get("CLOAKROOM_SESSION_IDLE_SECONDS", "1800"))
 DEFAULT_MAX_STEPS = 40
 MAX_STEPS_LIMIT = 200
+EVENTS_HELD = 5000
+EVENTS_KEEPALIVE_SECONDS = 15
+# A reader that stops reading blocks its own thread on write; this frees it.
+EVENTS_WRITE_TIMEOUT_SECONDS = 30
 
 
 def new_id(prefix):
@@ -57,6 +70,63 @@ def new_id(prefix):
 
 def now():
     return time.strftime("%Y-%m-%dT%H:%M:%S%z")
+
+
+class Events:
+    """The global event stream: every state change, in order.
+
+    Publishing never waits on a reader. Events go into a bounded buffer, and each
+    reader walks it from the id it last saw, at its own pace. A reader that falls
+    further behind than the buffer holds is told so by a `stream.gap` event, then
+    carries on from the oldest event still held.
+    """
+
+    def __init__(self, held=EVENTS_HELD):
+        self.held = collections.deque(maxlen=held)
+        # Ids start at the start time in milliseconds, so they keep rising across
+        # restarts: a reader resuming with an id from before a restart gets a gap,
+        # not a resume into unrelated events that reuse its number.
+        self.next_id = int(time.time() * 1000)
+        self.readers = 0
+        self.changed = threading.Condition()
+
+    def publish(self, kind, **data):
+        with self.changed:
+            event = {"id": self.next_id, "type": kind, "time": now(), **data}
+            self.next_id += 1
+            self.held.append(event)
+            self.changed.notify_all()
+        return event
+
+    def last_id(self):
+        with self.changed:
+            return self.next_id - 1
+
+    def after(self, last_id, timeout):
+        """Events newer than `last_id`, waiting up to `timeout` for the first one.
+
+        Returns (events, gap): `gap` is True when events after `last_id` have
+        already left the buffer.
+        """
+        with self.changed:
+            self.changed.wait_for(lambda: self.next_id - 1 > last_id, timeout)
+            if not self.held:
+                return [], False
+            first = self.held[0]["id"]
+            start = max(last_id + 1 - first, 0)
+            return list(itertools.islice(self.held, start, None)), last_id + 1 < first
+
+    def reader(self, delta):
+        with self.changed:
+            self.readers += delta
+
+
+def step_event(run, step):
+    """A step as published: the step record, its screenshot URL, and any files it saved."""
+    published = {key: value for key, value in step.items() if key != "screenshot"}
+    if step.get("screenshot"):
+        published["shot_url"] = f"/v1/runs/{run.id}/{step['screenshot']}"
+    return published
 
 
 class Session:
@@ -83,6 +153,7 @@ class Run:
         self.started = now()
         self.finished = None
         self.cancel_requested = False
+        self.files_published = 0
         self.done = threading.Event()
 
     def view(self, full=False):
@@ -136,6 +207,7 @@ class Cloakroom:
     """Sessions, the run queue, and the worker that drives the browser."""
 
     def __init__(self):
+        self.events = Events()
         self.notebook = Notebook(DATA_DIR)
         self.sessions = {}
         self.runs = {}
@@ -162,17 +234,29 @@ class Cloakroom:
             else:
                 session = Session()
                 self.sessions[session.id] = session
+                self.events.publish("session.created", session=session.id)
             session.busy = True
             session.last_used = time.time()
             run = Run(session, message, max_steps)
             self.runs[run.id] = run
+            # Published before the worker can see the run, so `run.queued` always
+            # comes before that run's `run.started`.
+            self.events.publish("run.queued", run=run.id, session=session.id, message=message,
+                                max_steps=max_steps)
         self.queue.put(run)
         return run
+
+    def cancel(self, run):
+        run.cancel_requested = True
+        if run.turn is not None:
+            run.turn.cancelled = True
+        self.events.publish("run.cancel_requested", run=run.id, session=run.session.id)
 
     def submit_smoke(self, sites):
         job = smoke.Smoke(sites or smoke.DEFAULT_SITES, HOST_DATA_DIR)
         with self.lock:
             self.smokes[job.id] = job
+        self.events.publish("smoke.queued", smoke=job.id, sites=job.sites)
         self.queue.put(job)
         return job
 
@@ -184,6 +268,8 @@ class Cloakroom:
             "key_setup": self.setup_codes.status(),
             "queue_depth": self.queue.qsize(),
             "running": self.current.id if self.current else None,
+            "last_event_id": self.events.last_id(),
+            "event_readers": self.events.readers,
             "sessions": [
                 {"session": session.id, "turns": len(session.conversation) // 2,
                  "idle_seconds": int(time.time() - session.last_used), "busy": session.busy}
@@ -195,6 +281,7 @@ class Cloakroom:
         """A one-time key setup URL. In-browser, it opens in a new tab of Cloakroom's
         own browser, for a user who is reaching the machine through the viewer."""
         code = self.setup_codes.issue()
+        self.events.publish("key.issued", in_browser=in_browser)
         if in_browser:
             url = f"http://127.0.0.1:{PORT}/setup?code={code}"
             self.queue.put(lambda context: context.new_page().goto(url))
@@ -202,6 +289,11 @@ class Cloakroom:
             url = f"http://127.0.0.1:{HOST_PORT}/setup?code={code}"
         return {"setup_url": url, "in_browser": in_browser, "openrouter_key": self._has_key(),
                 "expires_in_seconds": key_setup.CODE_SECONDS}
+
+    def key_progress(self, code, state, error=None):
+        """Record what happened to a setup link, and publish it. Never the key itself."""
+        self.setup_codes.note(code, state, error)
+        self.events.publish(f"key.{state}", **({"error": error} if error else {}))
 
     @staticmethod
     def _has_key():
@@ -220,12 +312,16 @@ class Cloakroom:
         while True:
             run = self.queue.get()
             if isinstance(run, smoke.Smoke):
+                self.events.publish("smoke.started", smoke=run.id)
                 try:
                     smoke.run(self._connect(playwright), run, self.notebook, self._has_key())
                 except Exception as exc:  # noqa: BLE001 - the worker must outlive one bad job
                     traceback.print_exc()
                     run.status = f"failed: {type(exc).__name__}: {exc}"
                 finally:
+                    view = run.view()
+                    self.events.publish("smoke.finished", smoke=run.id, status=view["status"],
+                                        passed=view["passed"], total=view["total"])
                     run.done.set()
                 continue
             if not isinstance(run, Run):
@@ -249,15 +345,33 @@ class Cloakroom:
                 run.session.last_used = time.time()
                 run.persist()
                 self.current = None
+                view = run.view()
+                self.events.publish("run.finished", run=run.id, session=run.session.id,
+                                    status=run.status, reply=run.reply, error=run.error,
+                                    final_url=run.final_url, steps=view["steps"],
+                                    files=view["files"], cost_usd=view["cost_usd"])
                 run.done.set()
 
     def _connect(self, playwright):
         if self.browser is None or not self.browser.is_connected():
+            reconnect = self.browser is not None
             self.browser = playwright.chromium.connect_over_cdp(CDP_URL)
+            self.events.publish("browser.connected", reconnect=reconnect)
             # Pages from an old connection are dead.
             for session in self.sessions.values():
+                if session.page is not None:
+                    self.events.publish("session.tab_lost", session=session.id)
                 session.page = None
         return self.browser.contexts[0]
+
+    def _stepped(self, run):
+        run.persist()
+        turn = run.turn
+        files = run.view()["files"][run.files_published:]
+        run.files_published += len(files)
+        self.events.publish("run.step", run=run.id, session=run.session.id,
+                            step=step_event(run, turn.steps[-1]), files=files,
+                            cost_usd=round(turn.cost_usd, 5))
 
     def _expire_sessions(self):
         cutoff = time.time() - SESSION_IDLE_SECONDS
@@ -268,6 +382,7 @@ class Cloakroom:
         for session in stale:
             if session.page is not None and not session.page.is_closed():
                 session.page.close()
+            self.events.publish("session.expired", session=session.id)
 
     def _run(self, playwright, run):
         if run.cancel_requested:
@@ -284,13 +399,16 @@ class Cloakroom:
         page.bring_to_front()
 
         run.status = "running"
+        self.events.publish("run.started", run=run.id, session=session.id)
         turn = agent.Turn(run.id, context, run.message, list(session.conversation), self.notebook,
                           run.dir, run.max_steps, agent.DEFAULT_MODEL)
-        turn.cancelled = run.cancel_requested
+        # Set run.turn before reading the flag: cancel() sets the flag, then the
+        # turn's, so a cancel that lands between the two lines is not lost.
         run.turn = turn
+        turn.cancelled = run.cancel_requested
         run.persist()
 
-        status, reply, page = agent.run_turn(page, turn, lambda _turn: run.persist())
+        status, reply, page = agent.run_turn(page, turn, lambda _turn: self._stepped(run))
         session.page = page
         run.final_url = page.url
         try:
@@ -364,7 +482,7 @@ def make_handler(cloakroom, token):
                 code = (parse_qs(urlparse(self.path).query).get("code") or [""])[0]
                 if not cloakroom.setup_codes.valid(code):
                     return self._send_html(410, key_setup.expired_page())
-                cloakroom.setup_codes.note(code, "opened")
+                cloakroom.key_progress(code, "opened")
                 return self._send_html(200, key_setup.form_page(code))
             length = int(self.headers.get("Content-Length") or 0)
             form = parse_qs(self.rfile.read(length).decode())
@@ -375,10 +493,10 @@ def make_handler(cloakroom, token):
             try:
                 info = key_setup.check_key(key)
             except ValueError as exc:
-                cloakroom.setup_codes.note(code, "rejected", str(exc))
+                cloakroom.key_progress(code, "rejected", str(exc))
                 return self._send_html(400, key_setup.form_page(code, str(exc)))
             key_setup.save_key(key)
-            cloakroom.setup_codes.note(code, "saved")
+            cloakroom.key_progress(code, "saved")
             cloakroom.setup_codes.consume(code)
             print("openrouter key saved", flush=True)
             return self._send_html(200, key_setup.saved_page(info))
@@ -400,6 +518,8 @@ def make_handler(cloakroom, token):
                 return None
             if parts == ["v1", "status"]:
                 return self._send(200, cloakroom.status())
+            if parts == ["v1", "events"]:
+                return self._stream_events()
             if parts == ["v1", "notes"]:
                 return self._send(200, {"sites": cloakroom.notebook.sites(),
                                         "general": cloakroom.notebook.notes_for("general", 1000),
@@ -428,6 +548,54 @@ def make_handler(cloakroom, token):
                 if len(parts) >= 5 and parts[3] in ("files", "shots"):
                     return self._send_file(parts[2], parts[3], parts[4:])
             return self._send(404, {"error": "not found"})
+
+        def _stream_events(self):
+            query = parse_qs(urlparse(self.path).query)
+            run_filter = (query.get("run") or [None])[0]
+            session_filter = (query.get("session") or [None])[0]
+            since = self.headers.get("Last-Event-ID") or (query.get("since") or [None])[0]
+            if since is not None and not since.isdigit():
+                return self._send(400, {"error": "Last-Event-ID / since must be a non-negative event id"})
+            last = cloakroom.events.last_id() if since is None else int(since)
+            if last > cloakroom.events.last_id():
+                # An id this stream never issued (a clock that went back): replay what
+                # is held, which starts with a gap.
+                last = 0
+
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.connection.settimeout(EVENTS_WRITE_TIMEOUT_SECONDS)
+            cloakroom.events.reader(+1)
+            try:
+                self.wfile.write(b"retry: 3000\n\n")
+                self.wfile.flush()
+                while True:
+                    events, gap = cloakroom.events.after(last, EVENTS_KEEPALIVE_SECONDS)
+                    chunks = []
+                    if gap:
+                        chunks.append(self._event_chunk({"id": events[0]["id"] - 1, "type": "stream.gap",
+                                                         "missed_after": last}))
+                    for event in events:
+                        last = event["id"]
+                        if run_filter and event.get("run") != run_filter:
+                            continue
+                        if session_filter and event.get("session") != session_filter:
+                            continue
+                        chunks.append(self._event_chunk(event))
+                    self.wfile.write(b"".join(chunks) if chunks else b": keepalive\n\n")
+                    self.wfile.flush()
+            except OSError:
+                # The reader went away, or stopped reading for the write timeout.
+                return None
+            finally:
+                cloakroom.events.reader(-1)
+
+        @staticmethod
+        def _event_chunk(event):
+            return (f"id: {event['id']}\nevent: {event['type']}\n"
+                    f"data: {json.dumps(event, separators=(',', ':'))}\n\n").encode()
 
         def _send_saved_run(self, run_id):
             path = os.path.join(DATA_DIR, "runs", os.path.basename(run_id), "run.json")
@@ -502,13 +670,17 @@ def make_handler(cloakroom, token):
                 run = cloakroom.runs.get(parts[2])
                 if run is None:
                     return self._send(404, {"error": f"no run {parts[2]}"})
-                run.cancel_requested = True
-                if run.turn is not None:
-                    run.turn.cancelled = True
+                cloakroom.cancel(run)
                 return self._send(200, {"run": run.id, "cancelling": run.status in ("queued", "running")})
             return self._send(404, {"error": "not found"})
 
     return Handler
+
+
+class Server(ThreadingHTTPServer):
+    # The default listen backlog is 5: twenty callers at once, beside a few event
+    # streams, overflowed it and got their connections reset.
+    request_queue_size = 128
 
 
 def drop_privileges():
@@ -536,7 +708,7 @@ def main():
     token = load_token()
     cloakroom = Cloakroom()
     threading.Thread(target=cloakroom.work, name="browser-worker", daemon=True).start()
-    server = ThreadingHTTPServer(("0.0.0.0", PORT), make_handler(cloakroom, token))
+    server = Server(("0.0.0.0", PORT), make_handler(cloakroom, token))
     print(f"cloakroom api on :{PORT}, model {agent.DEFAULT_MODEL}, data {DATA_DIR}", flush=True)
     server.serve_forever()
 
