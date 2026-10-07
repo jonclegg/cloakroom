@@ -69,6 +69,7 @@
   }
   .install code { flex: 1; min-width: 0; color: var(--ink); font-size: 13px; overflow-x: auto; white-space: nowrap; scrollbar-width: none; }
   .install code::before { content: "$ "; color: var(--cyan); }
+  .install code.say { white-space: normal; overflow-wrap: anywhere; }
   .install code.say::before { content: "> "; }
   .install button {
     flex: none; font: 600 14px Inter, system-ui, sans-serif; color: #04121A; background: var(--grad);
@@ -317,7 +318,11 @@
           <code id="cmd2" class="say">Install Cloakroom from https://github.com/jonclegg/cloakroom</code> <!-- pragma: allowlist secret -->
           <button type="button" data-copy="cmd2">Copy</button>
         </div>
-        <p class="muted" style="margin-top:12px;font-size:15px">Or run the installer yourself. macOS or Linux: <code>curl -fsSL https://raw.githubusercontent.com/jonclegg/cloakroom/main/install.sh | sh</code>. Windows (PowerShell): <code>irm https://raw.githubusercontent.com/jonclegg/cloakroom/main/install.ps1 | iex</code></p> <!-- pragma: allowlist secret -->
+        <p class="muted" style="margin:18px 0 10px;font-size:15px">Or run the installer yourself:</p>
+<pre><span class="c"># macOS or Linux</span>
+curl -fsSL https://raw.githubusercontent.com/jonclegg/cloakroom/main/install.sh | sh
+<span class="c"># Windows (PowerShell)</span>
+irm https://raw.githubusercontent.com/jonclegg/cloakroom/main/install.ps1 | iex</pre> <!-- pragma: allowlist secret -->
         <p class="muted" style="margin-top:16px">Every command takes <code>--json</code>, so agents can read the state instead of scraping text. The full agent reference lives in <a href="https://github.com/jonclegg/cloakroom/blob/main/skills/cloakroom/SKILL.md">the Cloakroom skill</a>.</p> <!-- pragma: allowlist secret -->
       </div>
       <div class="card tablecard">
