@@ -14,7 +14,9 @@
 
 Tell your agent (Claude Code, Codex, Cursor, Grok, and so on):
 
-> **Install Cloakroom from https://github.com/jonclegg/cloakroom**
+```text
+Install Cloakroom from https://github.com/jonclegg/cloakroom
+```
 
 That's it. Your agent will:
 
