@@ -1,5 +1,5 @@
 <p align="center">
-  <img alt="Cloakroom" src="docs/brand/cloak-logo-readme.png" width="200">
+  <img alt="Cloakroom" src="docs/brand/cloak-logo-tile.png" width="240">
 </p>
 
 <h3 align="center">A browser for your AI agent that big websites don't block, and that stays logged in.</h3>
