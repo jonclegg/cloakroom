@@ -4,7 +4,11 @@
 
 <h3 align="center">A browser for your AI agent that big websites don't block, and that stays logged in.</h3>
 
-<p align="center"><a href="docs/media/cloakroom-promo.mp4">Watch the 27-second video</a> · <a href="https://jonclegg.github.io/cloakroom/">Project page</a></p> <!-- pragma: allowlist secret -->
+<p align="center">
+  <a href="https://www.youtube.com/watch?v=f7Eef8COJt8"><img alt="Watch the Cloakroom video on YouTube" src="docs/media/cloakroom-video-thumb.jpg" width="640"></a>
+</p>
+
+<p align="center"><a href="https://www.youtube.com/watch?v=f7Eef8COJt8">Watch the video</a> · <a href="https://jonclegg.github.io/cloakroom/">Project page</a></p> <!-- pragma: allowlist secret -->
 
 ## Install
 
