@@ -69,6 +69,7 @@
   }
   .install code { flex: 1; min-width: 0; color: var(--ink); font-size: 13px; overflow-x: auto; white-space: nowrap; scrollbar-width: none; }
   .install code::before { content: "$ "; color: var(--cyan); }
+  .install code.say::before { content: "> "; }
   .install button {
     flex: none; font: 600 14px Inter, system-ui, sans-serif; color: #04121A; background: var(--grad);
     border: 0; border-radius: 8px; padding: 9px 15px; cursor: pointer;
@@ -78,8 +79,8 @@
   .chip { font-size: 13px; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 3px 11px; }
 
   .film { margin: 44px 0 0; }
-  .film video {
-    display: block; width: 100%; border-radius: 16px; background: #000;
+  .film iframe {
+    display: block; width: 100%; aspect-ratio: 16 / 9; border-radius: 16px; background: #000;
     border: 1px solid var(--line); box-shadow: 0 40px 120px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(0, 180, 240, 0.06);
   }
   .film figcaption { color: var(--dim); font-size: 14px; margin-top: 10px; text-align: center; }
@@ -90,6 +91,7 @@
   h3 { font-size: 18px; margin: 0 0 8px; letter-spacing: -0.01em; }
   p { margin: 0 0 16px; }
   .muted { color: var(--muted); }
+  p code, li code, td code { overflow-wrap: anywhere; }
 
   .grid { display: grid; gap: 18px; }
   .g3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -194,21 +196,20 @@
       <h1>Your agent's browser keeps getting bot&#8209;walled. <span class="g">Bring it home.</span></h1>
       <p class="lede">Cloakroom runs a stealth Chromium in Docker on <b>a computer you keep at home</b>. Your agent drives it over CDP, so it browses from your home connection, with a real fingerprint and one profile that stays signed in. It's not a fresh headless browser in a data center.</p>
       <div class="install">
-        <code id="cmd">curl -fsSL https://raw.githubusercontent.com/jonclegg/cloakroom/main/install.sh | sh</code> <!-- pragma: allowlist secret -->
+        <code id="cmd" class="say">Install Cloakroom from https://github.com/jonclegg/cloakroom</code> <!-- pragma: allowlist secret -->
         <button type="button" data-copy="cmd">Copy</button>
       </div>
-      <div class="hint">Or tell your agent "install Cloakroom" and hand it the repo URL. It reads the agent guide and does the rest.</div>
+      <div class="hint">Paste that to your agent. It installs Cloakroom, asks before installing Docker, opens a page for your OpenRouter key, and shows you screenshots of Amazon, Walmart, Target and Best Buy to prove it works.</div>
       <div class="chips"><span class="chip">MIT</span><span class="chip">macOS · Linux · Windows</span><span class="chip">Playwright / Puppeteer over CDP</span><span class="chip">No SDK, no cloud</span></div>
     </div>
     <img class="hero-mark" src="brand/cloak-logo.png" alt="Cloak logo: a hooded figure with glowing eyes">
   </header>
 
   <figure class="film">
-    <video controls playsinline preload="metadata" poster="media/cloakroom-promo-poster.jpg">
-      <source src="media/cloakroom-promo.webm" type="video/webm">
-      <source src="media/cloakroom-promo.mp4" type="video/mp4">
-    </video>
-    <figcaption>26 seconds, sound on.</figcaption>
+    <iframe src="https://www.youtube-nocookie.com/embed/f7Eef8COJt8?rel=0" title="Cloakroom" loading="lazy"
+      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+      referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+    <figcaption>Sound on. <a href="https://www.youtube.com/watch?v=f7Eef8COJt8">Watch on YouTube</a>.</figcaption>
   </figure>
 
   <section id="problem">
@@ -227,9 +228,9 @@
     <h2>A computer that stays at home and stays on.</h2>
     <p class="muted narrow">The whole trick is that the browser runs on your machine, on your internet connection. A VPS defeats the point. Any of these works:</p>
     <div class="need">
-      <div class="card"><h3><span class="ico">⌘</span>A Mac that stays home</h3><p>A Mac mini, an old MacBook, or a laptop you leave plugged in at home. Cloakroom uses OrbStack (installed for you on macOS 14+), or the Docker Desktop or Colima you already run. Apple Silicon and Intel.</p></div>
-      <div class="card"><h3><span class="ico">$_</span>A Linux box</h3><p>A mini PC, home server or spare desktop, amd64 or arm64, with Docker Engine and the Compose plugin. The installer won't install Docker, but it tells you exactly what's missing and the command that fixes it.</p></div>
-      <div class="card"><h3><span class="ico">⊞</span>Windows, if you must</h3><p>Docker Desktop with Linux containers (WSL 2), then one line in PowerShell (see <a href="#setup">Setup</a>).</p></div>
+      <div class="card"><h3><span class="ico">⌘</span>A Mac that stays home</h3><p>A Mac mini, an old MacBook, or a laptop you leave plugged in at home. Cloakroom uses OrbStack (installed for you on macOS 14+, once you say yes), or the Docker Desktop or Colima you already run. Apple Silicon and Intel. On a Mac the browser presents as a Mac, with your Mac's own fonts.</p></div>
+      <div class="card"><h3><span class="ico">$_</span>A Linux box</h3><p>A mini PC, home server or spare desktop, amd64 or arm64. If Docker Engine isn't there, the installer offers to install it with Docker's official script, and you don't have to log out and back in.</p></div>
+      <div class="card"><h3><span class="ico">⊞</span>Windows, if you must</h3><p>Docker Desktop with Linux containers (WSL 2). If it's missing, the installer offers to install it with <code>winget</code>.</p></div>
     </div>
     <div class="callout"><b>And your agent runs on that machine too.</b> The browser's control port only listens on <code>127.0.0.1</code>. So the agent that drives it (Grok Bot, Muse, Claude Code, Codex, Cursor) runs on the home computer, and you keep talking to the agent from your phone as usual. Keep the machine awake (on a plugged-in Mac, <code>caffeinate -s</code> does it). The first start downloads about 1&nbsp;GB.</div>
   </section>
@@ -253,6 +254,7 @@
           <div class="t">Docker container</div>
           <ul>
             <li><b>CloakBrowser</b>: CloakHQ's stealth build of Chromium, run <em>headed</em> on Xvfb, served over CDP on <code>127.0.0.1:9222</code></li>
+            <li><b>Chat API</b> on <code>127.0.0.1:8423</code>: <code>cloakroom chat "…"</code> and Cloakroom drives the browser with DeepSeek, working bot checks as it goes</li>
             <li><b>Persistent profile</b> in a Docker volume: cookies and logins survive restarts</li>
             <li><b>noVNC viewer</b> on <code>127.0.0.1:6080</code> for watching and taking over</li>
           </ul>
@@ -285,8 +287,8 @@
 
     <div class="grid g3" style="margin-top:28px">
       <div class="card"><div class="tag">Entry</div><h3>Bing first</h3><p>Agents open sites from a Bing organic result instead of a direct <code>goto</code> or a Google search, which tends to hit <code>/sorry/</code>. <code>examples/bing_first.py</code> does it.</p></div>
-      <div class="card"><div class="tag">Input</div><h3>Humanized</h3><p>Bezier mouse paths with jitter, and typing at 55–150&nbsp;ms per key. They use the site's own search box, not a hot search URL. <code>examples/humanize.py</code>.</p></div>
-      <div class="card"><div class="tag">Takeover</div><h3>You finish the hard parts</h3><p>Passwords and puzzles are yours, typed in the viewer. The agent never asks for a password in chat, and it handles 2FA codes itself.</p></div>
+      <div class="card"><div class="tag">Input</div><h3>Humanized, and real</h3><p>Curved mouse paths with jitter and typing at 55–150&nbsp;ms per key, delivered as real OS-level mouse and keyboard events, not CDP's synthetic ones. The site's own search box, not a hot search URL.</p></div>
+      <div class="card"><div class="tag">Bot checks</div><h3>Worked, not avoided</h3><p>Press-and-hold, sliders and Cloudflare checks are worked by Cloakroom's own agent. Passwords stay yours, typed in the viewer; the agent never asks for one in chat, and it handles 2FA codes itself.</p></div>
     </div>
 
     <div class="grid g3 shots" style="margin-top:28px">
@@ -307,21 +309,24 @@
 
   <section id="setup">
     <div class="eyebrow">Setup</div>
-    <h2>One command, then five verbs.</h2>
+    <h2>One sentence to your agent, then a few commands.</h2>
     <div class="grid g2">
       <div>
-        <p class="muted">The installer finds or sets up a container engine (OrbStack, Docker Desktop, Colima or Docker Engine) and installs <code>cloudflared</code> for sharing. It downloads Cloakroom to <code>~/.cloakroom/app</code>, puts <code>cloakroom</code> on your PATH, and starts the browser. Run it again any time to update: your <code>.env</code> settings are kept. It's plain POSIX <code>sh</code>, and Windows gets a PowerShell equivalent.</p>
+        <p class="muted">Your agent follows the install steps in the repo. It finds or, with your OK, installs a container engine (OrbStack, Docker Engine or Docker Desktop), pulls Cloakroom's image, and starts the browser. Then it opens a page on your computer for your OpenRouter key, and runs a smoke test that shows you a screenshot of each site it reached.</p>
         <div class="install">
-          <code id="cmd2">curl -fsSL https://raw.githubusercontent.com/jonclegg/cloakroom/main/install.sh | sh</code> <!-- pragma: allowlist secret -->
+          <code id="cmd2" class="say">Install Cloakroom from https://github.com/jonclegg/cloakroom</code> <!-- pragma: allowlist secret -->
           <button type="button" data-copy="cmd2">Copy</button>
         </div>
-        <p class="muted" style="margin-top:12px;font-size:15px">Windows (PowerShell): <code>irm https://raw.githubusercontent.com/jonclegg/cloakroom/main/install.ps1 | iex</code></p> <!-- pragma: allowlist secret -->
+        <p class="muted" style="margin-top:12px;font-size:15px">Or run the installer yourself. macOS or Linux: <code>curl -fsSL https://raw.githubusercontent.com/jonclegg/cloakroom/main/install.sh | sh</code>. Windows (PowerShell): <code>irm https://raw.githubusercontent.com/jonclegg/cloakroom/main/install.ps1 | iex</code></p> <!-- pragma: allowlist secret -->
         <p class="muted" style="margin-top:16px">Every command takes <code>--json</code>, so agents can read the state instead of scraping text. The full agent reference lives in <a href="https://github.com/jonclegg/cloakroom/blob/main/skills/cloakroom/SKILL.md">the Cloakroom skill</a>.</p> <!-- pragma: allowlist secret -->
       </div>
       <div class="card tablecard">
         <table>
-          <tr><td><code>cloakroom start</code></td><td>Build or pull the image, start the container, wait for CDP, open the viewer.</td></tr>
-          <tr><td><code>cloakroom status</code></td><td>Is Docker up, is the browser ready, plus the CDP, viewer and share URLs.</td></tr>
+          <tr><td><code>cloakroom chat "…"</code></td><td>Give Cloakroom a goal; it drives the browser and replies.</td></tr>
+          <tr><td><code>cloakroom key</code></td><td>Open the page where you paste your OpenRouter key.</td></tr>
+          <tr><td><code>cloakroom smoke</code></td><td>Visit a few big sites and show a screenshot of each.</td></tr>
+          <tr><td><code>cloakroom start</code></td><td>Pull the image, start the container, wait until it's ready.</td></tr>
+          <tr><td><code>cloakroom status</code></td><td>Is it ready, is the key set, plus the viewer, CDP and share URLs.</td></tr>
           <tr><td><code>cloakroom share</code></td><td>Private HTTPS link to the viewer for your phone.</td></tr>
           <tr><td><code>cloakroom unshare</code></td><td>Close the share link.</td></tr>
           <tr><td><code>cloakroom stop</code></td><td>Stop the container. The profile and its logins are kept.</td></tr>
@@ -334,24 +339,24 @@
     <div class="eyebrow">FAQ</div>
     <h2>Questions you're about to ask</h2>
     <div class="narrow">
-      <details><summary>Is this a CAPTCHA solver?</summary><div><p>No. Cloakroom tries not to trigger challenges in the first place: a home IP, a stealth fingerprint, a warm profile, and human-paced input. When a puzzle does show up, you solve it in the viewer. Agents are told not to drag sliders or call solving services.</p></div></details>
+      <details><summary>Does it solve CAPTCHAs?</summary><div><p>It tries not to trigger them in the first place: a home IP, a stealth fingerprint, a warm profile, and human-paced input. When a check does show up, Cloakroom's own agent works it the way a person would: press-and-hold, a slider, a checkbox. It doesn't call solving services. Anything it can't clear, you can finish in the viewer.</p></div></details>
       <details><summary>Will it get past every bot wall?</summary><div><p>No guarantees. Some sites will still block you. A flagged home IP, a VPN or a datacenter proxy can all still get you challenged. Loading a homepage is not the same as completing a login or a checkout.</p></div></details>
       <details><summary>Why not just use a residential proxy with a cloud browser?</summary><div><p>That fixes the IP but not the fingerprint or the empty profile, and you're renting someone else's "residential" address. Cloakroom keeps all three together on hardware you own. If you want a proxy anyway, set <code>CLOAKROOM_PROXY</code> in <code>.env</code>. Some agents can already route traffic through your own computer, which clears plenty of IP-only blocks; Cloakroom is for the sites that fingerprint the browser too.</p></div></details>
       <details><summary>Can a cloud agent connect over Tailscale or a tunnel?</summary><div><p>Not as a supported setup. CDP on <code>9222</code> is full, unauthenticated control of a browser that's signed into your accounts, so Cloakroom keeps it on localhost and the agent guide tells agents not to expose it, Tailscale included. Run the agent on the same computer instead. The only thing that leaves the machine is the viewer, through <code>cloakroom share</code>.</p></div></details>
-      <details><summary>Does it keep me signed in?</summary><div><p>Yes. The profile lives in a Docker volume, so cookies and logins survive <code>cloakroom stop</code>, reboots and image updates. Only <code>docker compose down -v</code> deletes it. Cookies persist by default, but the fingerprint is regenerated on each start unless you pin it with <code>CLOAKROOM_FINGERPRINT_SEED</code>.</p></div></details>
+      <details><summary>Does it keep me signed in?</summary><div><p>Yes. The profile lives in a Docker volume, so cookies and logins survive <code>cloakroom stop</code>, reboots and image updates. Only <code>docker compose down -v</code> deletes it. The browser's fingerprint is kept with the profile too, so sites keep seeing the same device.</p></div></details>
       <details><summary>How do text-message 2FA codes work?</summary><div><p>Your agent handles the code, not Cloakroom. It might read it from Messages or email on your computer and type it in. If it can't, you type it in the viewer. Cloakroom never reads your texts. Because the profile persists, most sites only ask on the first sign-in.</p></div></details>
       <details><summary>Can I run it on a server instead of at home?</summary><div><p>You can, but then you're back on a datacenter IP, which is the problem Cloakroom exists to solve. The point is a machine on your home connection.</p></div></details>
-      <details><summary>What is CloakBrowser, and is this free?</summary><div><p>CloakBrowser is a closed-source stealth build of Chromium from CloakHQ. Cloakroom builds on their official Docker image and adds the headed display, the viewer, the persistent profile, the CLI and the agent guide. Cloakroom's own code is MIT licensed. The CloakBrowser binary is CloakHQ's, pulled from Docker Hub under their Binary License and not redistributed here. A license key is optional; a free key allows one session at a time. Cloakroom is not affiliated with CloakHQ.</p></div></details>
+      <details><summary>What is CloakBrowser, and is this free?</summary><div><p>CloakBrowser is a closed-source stealth build of Chromium from CloakHQ. Cloakroom runs it from <a href="https://github.com/jonclegg/CloakBrowser/tree/cloakroom-fixes">a fork of its open-source wrapper</a> and adds the headed display, the viewer, the persistent profile, the chat agent, the CLI and the agent guide. Cloakroom's own code is MIT licensed. The CloakBrowser binary is CloakHQ's, under their Binary License: Cloakroom's image doesn't include it, and your container downloads it from CloakHQ on first start. A license key is optional. Cloakroom's agent uses DeepSeek through your own OpenRouter key, which costs a few cents a task. Cloakroom is not affiliated with CloakHQ.</p></div></details>
       <details><summary>Is this allowed?</summary><div><p>Use your own accounts and stay within each site's terms. Cloakroom is meant to let your agent do what you'd do yourself in a browser, like ordering groceries or checking an order. It is not for scraping at scale or getting around a ban. There are no site-specific scripts, by design.</p></div></details>
-      <details><summary>How heavy is it?</summary><div><p>One container with a headed Chromium, Xvfb and a VNC server. Expect about 1&nbsp;GB of downloads on first start, which can take up to ten minutes. The container gets 2&nbsp;GB of shared memory. It restarts automatically unless you stop it.</p></div></details>
+      <details><summary>How heavy is it?</summary><div><p>One container with a headed Chromium, Xvfb, a VNC server and the chat API. Expect about 1&nbsp;GB of downloads on first start, which can take up to ten minutes. The container gets 2&nbsp;GB of shared memory. It restarts automatically unless you stop it.</p></div></details>
     </div>
   </section>
 
   <div class="cta">
     <h2>Give your agent a browser at home.</h2>
-    <p class="muted">Run it yourself, or tell your agent to install it.</p>
+    <p class="muted">Tell your agent, and it does the rest.</p>
     <div class="install">
-      <code id="cmd3">curl -fsSL https://raw.githubusercontent.com/jonclegg/cloakroom/main/install.sh | sh</code> <!-- pragma: allowlist secret -->
+      <code id="cmd3" class="say">Install Cloakroom from https://github.com/jonclegg/cloakroom</code> <!-- pragma: allowlist secret -->
       <button type="button" data-copy="cmd3">Copy</button>
     </div>
   </div>
