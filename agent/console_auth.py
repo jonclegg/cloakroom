@@ -29,7 +29,7 @@ import threading
 import time
 from datetime import datetime
 
-MIN_LENGTH = 10
+MIN_LENGTH = 8
 # Strength 0 is refused and 1 ("Weak") is shown but refused too.
 MIN_STRENGTH = 2
 # Refused anywhere in the password; the setup pages get the same list.
