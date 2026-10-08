@@ -779,5 +779,9 @@ def reflect(turn, status, reply):
     )
     raw, cost = chat([{"role": "user", "content": prompt}], model=turn.model, json_mode=True)
     turn.cost_usd += cost
-    for note in json.loads(raw).get("notes") or []:
+    try:
+        notes = json.loads(raw).get("notes") or []
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"reflect got unparseable model output: {raw[:200]!r}") from exc
+    for note in notes:
         turn.write_note(note, "")
