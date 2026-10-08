@@ -312,6 +312,7 @@ class Session:
             "task": last.reply if state == "needs" else None,
             "needs_user": last.needs_user if state == "needs" else None,
             "running_run": next((run.id for run in self.runs if run.status in ("running", "queued")), None),
+            "stopping": any(run.cancel_requested for run in self.runs if run.status in ("running", "queued")),
             "last_used": time.strftime("%Y-%m-%dT%H:%M:%S%z", time.localtime(self.last_used)),
             "messages": messages,
         }

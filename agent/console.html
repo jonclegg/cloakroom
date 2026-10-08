@@ -155,9 +155,18 @@ details.thinking div { margin-top: 4px; padding: 8px 10px; border-radius: 6px; b
 .compose { flex: none; padding: 10px 12px 12px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 8px; }
 .compose .needs-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px; background: var(--needs-wash); border: 1px solid var(--needs-line); color: var(--needs-ink); font-size: 13px; }
 .compose .needs-row span { flex: 1; min-width: 0; }
-.compose .row { display: flex; gap: 8px; align-items: flex-end; }
-.compose textarea { flex: 1; min-width: 0; min-height: 40px; max-height: 140px; padding: 9px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--ground); resize: none; field-sizing: content; }
-.compose .hint { font-size: 11px; color: var(--muted); }
+/* The box and its button in one pill: ↑ sends, ■ stops the run while the box is empty. */
+.compose .pill { display: flex; align-items: flex-end; gap: 8px; padding: 4px 4px 4px 14px; border-radius: 20px; border: 1px solid var(--line); background: var(--raised); }
+.compose .pill:focus-within { border-color: #3A4150; }
+.compose textarea { flex: 1; min-width: 0; min-height: 30px; max-height: 140px; padding: 5px 0; border: 0; outline: 0; background: transparent; resize: none; field-sizing: content; }
+.compose textarea::placeholder { color: var(--muted); }
+.compose .round { flex: none; width: 30px; height: 30px; border-radius: 50%; border: 0; display: grid; place-items: center; cursor: pointer; background: var(--ink); color: var(--ground); }
+.compose .round:hover { background: #fff; }
+.compose .round:disabled { background: #3A4150; color: var(--muted); cursor: default; }
+.compose .round svg { width: 16px; height: 16px; }
+.compose .round .square { width: 10px; height: 10px; border-radius: 2px; background: currentColor; }
+.compose .round.stopping { opacity: .5; }
+.compose .hint { font-size: 11px; color: var(--muted); padding-left: 14px; }
 
 .welcome { padding: 48px 24px; max-width: 34rem; color: var(--soft); }
 .welcome h1 { font-size: 22px; color: var(--ink); margin: 0 0 8px; }
@@ -324,9 +333,9 @@ dialog .body > p { margin: 0 0 8px; color: var(--muted); font-size: 13px; }
         <span>Done in the page? Cloakroom carries on from what is on screen.</span>
         <button class="btn amber small" type="button" data-act="carry-on">Done, carry on</button>
       </div>
-      <div class="row">
+      <div class="pill">
         <textarea id="reply" rows="1" aria-label="Message Cloakroom about this session" data-testid="reply"></textarea>
-        <button class="btn primary" type="submit" data-testid="send">Send</button>
+        <button class="round" type="submit" id="s-send" data-testid="send" aria-label="Send"></button>
       </div>
       <span class="hint" id="s-compose-hint">Same tab, same conversation.</span>
     </form>
@@ -625,7 +634,25 @@ function renderSession() {
   renderNow(s, busyElsewhere);
   renderThread(s);
   $('reply').placeholder = needs ? 'e.g. I signed in with Google, carry on' : s.state === 'working' || s.state === 'waiting' ? 'Message Cloakroom about this tab…' : 'e.g. Now sort by price';
-  $('s-compose-hint').textContent = s.state === 'working' || s.state === 'waiting' ? 'Queues behind what it is doing now.' : 'Same tab, same conversation.';
+  renderSend(s);
+}
+
+const ARROW = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>';
+
+// While a run is going and the box is empty, the button stops the run; typing turns it back into send, which queues.
+function renderSend(s) {
+  const typed = $('reply').value.trim().length > 0;
+  const stop = Boolean(s.running_run) && !typed;
+  const button = $('s-send');
+  button.innerHTML = stop ? '<span class="square"></span>' : ARROW;
+  button.className = 'round' + (stop && s.stopping ? ' stopping' : '');
+  button.disabled = stop ? s.stopping : !typed;
+  button.dataset.testid = stop ? 'stop' : 'send';
+  button.setAttribute('aria-label', stop ? 'Stop' : 'Send');
+  button.title = stop ? 'Stop (Esc)' : '';
+  $('s-compose-hint').textContent = s.stopping ? 'Stopping after the current step.'
+    : !s.running_run ? 'Same tab, same conversation.'
+    : typed ? 'Queues behind what it is doing now.' : '■ stops it. Type to queue a message instead.';
 }
 
 function connectLive(viewOnly) {
@@ -734,7 +761,12 @@ $('s-compose').addEventListener('submit', async (event) => {
   event.preventDefault();
   const s = current();
   const text = $('reply').value.trim();
-  if (!s || !text) return;
+  if (!s) return;
+  if (!text) {
+    if (!s.running_run || s.stopping) return;
+    try { await act('cancel', s); } catch (error) { showError(error); }
+    return;
+  }
   try {
     await api('POST', '/v1/chat', { message: text, session: s.session, wait: false });
     $('reply').value = '';
@@ -744,7 +776,9 @@ $('s-compose').addEventListener('submit', async (event) => {
 });
 $('reply').addEventListener('keydown', (event) => {
   if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); $('s-compose').requestSubmit(); }
+  if (event.key === 'Escape' && !$('reply').value.trim()) { event.preventDefault(); $('s-compose').requestSubmit(); }
 });
+$('reply').addEventListener('input', () => { if (current()) renderSend(current()); });
 
 $('new-form').addEventListener('submit', async (event) => {
   event.preventDefault();

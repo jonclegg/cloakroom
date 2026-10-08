@@ -316,6 +316,23 @@ def test_take_over_holds_the_run_and_hand_back_resumes_it_then_stop(page):
     expect(cloakroom_messages(page).last).to_have_attribute("data-status", "cancelled")
 
 
+def test_the_message_box_button_stops_the_run_until_the_user_types(page):
+    start_session(page, "Go to wikipedia.org, search for Austin, Texas, open the article, "
+                        "and tell me the population in the infobox and the name of the mayor.")
+    expect(status(page)).to_have_text("Working", timeout=RUN_TIMEOUT)
+
+    # Typing turns the stop button back into send, which would queue the message.
+    page.get_by_test_id("reply").fill("Also the area")
+    expect(page.get_by_test_id("send")).to_be_enabled()
+    page.get_by_test_id("reply").fill("")
+
+    page.get_by_test_id("stop").click()
+    expect(page.get_by_test_id("stop")).to_be_disabled()
+    expect(status(page)).to_have_text("Stopped", timeout=RUN_TIMEOUT)
+    expect(cloakroom_messages(page).last).to_have_attribute("data-status", "cancelled")
+    expect(page.get_by_test_id("send")).to_be_disabled()
+
+
 # ---------------------------------------------------------------- needs you
 
 
