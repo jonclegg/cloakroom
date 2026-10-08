@@ -16,11 +16,9 @@ VIEWER_URL="http://127.0.0.1:${VIEWER_PORT}"
 API_URL="http://127.0.0.1:${API_PORT}"
 STATE_DIR="${HOME}/.cloakroom"
 DATA_DIR="${CLOAKROOM_DATA_DIR:-${STATE_DIR}/data}"
-SHARE_FILE="${STATE_DIR}/share.json"
-SHARE_LOG="${STATE_DIR}/share.log"
 
-# OrbStack's docker CLI and the installer's cloudflared live outside the default PATH.
-for bin_dir in "${HOME}/.orbstack/bin" "${HOME}/.local/bin"; do
+# OrbStack's docker CLI lives outside the default PATH.
+for bin_dir in "${HOME}/.orbstack/bin"; do
   case ":${PATH}:" in
     *":${bin_dir}:"*) ;;
     *) export PATH="${bin_dir}:${PATH}" ;;
@@ -42,15 +40,9 @@ health() {
   docker inspect -f '{{.State.Health.Status}}' cloakroom 2>/dev/null || echo not_running
 }
 
-share_field() {
-  sed -n "s/.*\"$1\": *\"\{0,1\}\([^\",}]*\).*/\1/p" "$SHARE_FILE"
-}
-
+# The share tunnel runs in the container, which writes its link here; a container
+# that is not running has no tunnel, whatever the file says.
 active_share_url() {
-  [ -f "$SHARE_FILE" ] || return 0
-  if kill -0 "$(share_field pid)" 2>/dev/null; then
-    share_field url
-    return 0
-  fi
-  rm -f "$SHARE_FILE"
+  [ "$(health)" = healthy ] && [ -f "${DATA_DIR}/share.json" ] || return 0
+  sed -n 's/.*"url": *"\([^"]*\)".*/\1/p' "${DATA_DIR}/share.json"
 }

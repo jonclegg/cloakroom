@@ -1,4 +1,4 @@
-"""`cloakroom chat`, `run`, `cancel`, `notes`, `key`, `smoke`, `status`: a client for the chat API.
+"""`cloakroom chat`, `run`, `cancel`, `notes`, `key`, `smoke`, `share`, `status`: a client for the chat API.
 
 Standard library only. It runs inside the container (`docker exec cloakroom
 cloakroom <command>`), so the host needs nothing but Docker.
@@ -44,9 +44,18 @@ def call(method, path, body=None, timeout=None):
                          f"Try: cloakroom start") from exc
 
 
+SHARE_WARNING = "Anyone with this link can control the logged-in browser. Treat it as a secret."
+
+
 def print_run(run):
     print(run["reply"] or "(no reply)")
     print()
+    if run.get("needs_user"):
+        print(f"Needs the user: {run['needs_user']['task']}")
+        print(f"  {run['needs_user']['share_url']}")
+        print(f"  {SHARE_WARNING}")
+        print("  When they are done, continue the session; stop the link with: cloakroom unshare")
+        print()
     print(f"status:  {run['status']}   steps: {run['steps']}   cost: ${run['cost_usd']:.4f}")
     if run.get("files"):
         where = run.get("host_dir") and os.path.join(run["host_dir"], "files")
@@ -119,6 +128,12 @@ def main():
     smoke.add_argument("sites", nargs="*", help="domains (default: amazon.com walmart.com target.com bestbuy.com)")
     smoke.add_argument("--json", action="store_true")
 
+    share = commands.add_parser("share", help="a private HTTPS link to the viewer")
+    share.add_argument("--json", action="store_true")
+
+    unshare = commands.add_parser("unshare", help="stop the share link")
+    unshare.add_argument("--json", action="store_true")
+
     status = commands.add_parser("status", help="browser, model, key, and queue")
     status.add_argument("--json", action="store_true")
 
@@ -134,7 +149,7 @@ def main():
             print(f"run {run['run']} queued in session {run['session']}; check it with: cloakroom run {run['run']}")
         else:
             print_run(run)
-        return 0 if run["status"] in ("done", "needs_input", "queued") else 1
+        return 0 if run["status"] in ("done", "needs_input", "needs_user", "queued") else 1
 
     if args.command == "run":
         run = call("GET", f"/v1/runs/{args.run}")
@@ -186,6 +201,27 @@ def main():
                 print(f"{mark} {item['site']:16} {item.get('title') or item.get('error') or ''}{cleared}")
             print(f"\n{result['passed']} of {result['total']} reached. Report: {result['host_report'] or result['report']}")
         return 0 if result["passed"] == result["total"] else 1
+
+    if args.command == "share":
+        # The tunnel can take a while to come up; give it longer than the server waits.
+        link = call("POST", "/v1/share", timeout=90)
+        if args.json:
+            print(json.dumps({"event": "share_ready", **link}))
+            return 0
+        if link["reused"]:
+            print("Already sharing. This link stays the same until you unshare.")
+        print(f"{link['url']}\n\n{SHARE_WARNING}\nIt can take a few seconds before the link loads.\n"
+              "Stop it with: cloakroom unshare\nThe link changes every time you start a new share.")
+        return 0
+
+    if args.command == "unshare":
+        stopped = call("POST", "/v1/unshare")["stopped"]
+        if args.json:
+            print(json.dumps({"event": "share_stopped", "stopped": stopped}))
+        else:
+            print("Stopped the remote viewer. The old link no longer works." if stopped
+                  else "No remote viewer is running.")
+        return 0
 
     if args.command == "status":
         result = call("GET", "/v1/status")

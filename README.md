@@ -33,7 +33,7 @@ Watch it work at http://127.0.0.1:6080, or ask your agent to share a link so you
 
 ## Good to know
 
-- **Sign in yourself.** When a site needs a password, type it in the viewer. Don't paste it into the chat. Your agent can type in texted sign-in codes for you.
+- **Sign in yourself.** When a site needs a password, Cloakroom stops and your agent sends you a private link to the browser, so you can sign in from your phone or any computer. Don't paste passwords into the chat. Your agent can type in texted sign-in codes for you.
 - **It runs on your computer.** Traffic leaves from your own internet connection, and nothing is reachable from outside unless you share the viewer link. Anyone who has that link can control your logged-in browser, so keep it private.
 - **The details** for agents and the curious are in [AGENTS.md](AGENTS.md) and [the agent guide](skills/cloakroom/SKILL.md). The browser is [CloakBrowser](https://github.com/CloakHQ/CloakBrowser), run from [this fork](https://github.com/jonclegg/CloakBrowser/tree/cloakroom-fixes).
 

@@ -15,6 +15,7 @@ services:
       TZ: ${TZ:-America/Chicago}
       CLOAKROOM_HOST_DATA_DIR: ${CLOAKROOM_DATA_DIR:-${HOME}/.cloakroom/data}
       CLOAKROOM_API_HOST_PORT: ${CLOAKROOM_API_PORT:-8423}
+      CLOAKROOM_VIEWER_HOST_PORT: ${CLOAKROOM_VIEWER_PORT:-6080}
     ports:
       # Localhost only. Anyone who can reach these ports controls the browser.
       - "127.0.0.1:${CLOAKROOM_CDP_PORT:-9222}:9222"

@@ -93,7 +93,9 @@ The browser keeps running in the background (as long as OrbStack or Docker Engin
 
 5. **Bring in the user when needed**
 
-   If a page needs a password or a step you can't do, tell the user to finish it in the viewer at http://127.0.0.1:6080 (or run `cloakroom share` if they're away from this computer), then continue. Never ask for a password in chat.
+   Whenever the user has to act in the page (sign in, pay, clear a check that won't clear), run `cloakroom share --json` and send them the `url` in the same turn, with what they need to do. Don't assume they are at the machine running Cloakroom; the share link works from anywhere. Send the share link, not http://127.0.0.1:6080. Wait for them to say they're done, then continue. Never ask for a password in chat.
+
+   `cloakroom chat` does this itself: a run that needs the user ends `needs_user` with the share link already started (see [Handing off to the user](#handing-off-to-the-user)). Send the link it returns.
 
 6. **Two-factor codes**
 
@@ -109,13 +111,13 @@ Run this immediately. Do not ask the user to approve, confirm, or opt in. There 
 cloakroom share --json
 ```
 
-That one command starts the browser if it is not already running, then starts a Cloudflare quick tunnel to the viewer only (`http://127.0.0.1:6080` by default) and prints the URL. It does not prompt. State (pid and URL) is in `~/.cloakroom/share.json`.
+That one command starts the browser if it is not already running, then has the container start a Cloudflare quick tunnel to the viewer only and prints the URL. It does not prompt, and the host needs nothing installed for it: `cloudflared` is in the image, and the chat API runs it. The link is in `~/.cloakroom/data/share.json` while it runs. Stopping the container stops the tunnel.
 
 ```json
 {"event":"share_ready","url":"https://….trycloudflare.com","viewer_local":"http://127.0.0.1:6080","reused":false}
 ```
 
-`url` is a secret capability link. Anyone with it can control the logged-in browser. Tell the user that when you send it. When they are done, run `cloakroom unshare` (same as `cloakroom share stop`). A new share gets a new link. `cloakroom status --json` includes `share_url` while the tunnel is running (`null` when it is not).
+`url` is a secret capability link. Anyone with it can control the logged-in browser. Tell the user that when you send it. When they are done, run `cloakroom unshare`. A new share gets a new link. `cloakroom status --json` includes `share_url` while the tunnel is running (`null` when it is not).
 
 Do **not** use Tailscale. Do **not** Funnel or port-forward 6080 or 9222 yourself. The only remote path is `cloakroom share`, and it tunnels the viewer only. Never point a tunnel at port 9222. Do not add an approval gate of your own.
 
@@ -133,7 +135,7 @@ Every command takes `--json`.
 | `cloakroom share --json` | Start a private HTTPS link to the viewer and print it. |
 | `cloakroom unshare` | Stop that link. It stops working immediately. |
 
-`start` / `stop` run [`start.sh`](../../start.sh) / [`stop.sh`](../../stop.sh), which also work on their own. `share` / `unshare` run [`share.sh`](../../share.sh).
+`start` / `stop` run [`start.sh`](../../start.sh) / [`stop.sh`](../../stop.sh), which also work on their own. `share` / `unshare` call the chat API (`POST /v1/share`, `POST /v1/unshare`).
 
 ## `cloakroom chat` (Cloakroom drives, you talk)
 
@@ -156,8 +158,8 @@ humanized, repeat until the model replies or hits `--max-steps` (default 40).
 | Reply status | Meaning | What you do |
 | --- | --- | --- |
 | `done` | Finished. The reply has what you asked for. | Use it. |
-| `needs_input` | It needs something: a two-factor code, a choice. | Answer with `--session`. Codes: you fetch them, as always. |
-| `blocked` | A bot check it could not clear. | The user finishes it in the viewer, then you continue the session. |
+| `needs_input` | It needs something you can answer: a two-factor code, a choice. | Answer with `--session`. Codes: you fetch them, as always. |
+| `needs_user` | The user has to act in the page: sign in, pay, or clear a bot check it could not. | Send them `needs_user.task` and `needs_user.share_url` now. When they're done, continue with `--session`. See [Handing off to the user](#handing-off-to-the-user). |
 | `failed` / `step_limit` | It did not get there. | Read `cloakroom run <id>`; rephrase, or raise `--max-steps`. |
 
 A **session** is one tab and its conversation. Without `--session` you get a new tab. Pass
@@ -217,11 +219,33 @@ http://127.0.0.1:8423/v1/chat` with `{"message": "...", "session": null}` and
 `Authorization: Bearer $(cat ~/.cloakroom/data/api-token)`. The other routes are listed at
 the top of [`agent/server.py`](../../agent/server.py).
 
+### Handing off to the user
+
+Cloakroom never types a password, payment detail or personal detail that the conversation
+didn't give it. When the page needs the user (a sign-in, a payment, or a bot check it can't
+clear), the model replies with status `needs_user` and says what they need to do. A `type`
+aimed at a password field becomes that reply even if the model didn't choose it. The server
+then starts the share (or reuses the one already running), and the run carries the link:
+
+```json
+{"run": "r_...", "session": "s_...", "status": "needs_user",
+ "reply": "Sign in to amazon.com in the viewer, then tell me to carry on.",
+ "needs_user": {"task": "Sign in to amazon.com in the viewer, then tell me to carry on.",
+                "share_url": "https://….trycloudflare.com"}}
+```
+
+`needs_user` is `null` on every other run, and `run.finished` carries it too. Send the user
+`task` and `share_url` in the same turn; it's a secret capability link, so say so. The
+session's tab stays where it was. When they say they're done, send the next message with
+`--session` (for example "I've signed in, carry on") and Cloakroom picks up in the same tab,
+now signed in, with the login saved in the profile for later runs. Run `cloakroom unshare`
+once nobody needs the viewer.
+
 **Following progress without polling:** `GET /v1/events` is a Server-Sent Events stream of
 every state change, in order: `run.queued`, `run.started`, `run.step` (the step, its
 screenshot URL, and any files it saved), `run.finished` (status, reply, files, cost),
 `run.cancel_requested`, `session.created`, `session.expired`, `session.tab_lost`,
-`browser.connected`, `smoke.*` and `key.*`. `?run=<id>` or `?session=<id>` narrows it. To
+`browser.connected`, `share.started`, `share.stopped`, `smoke.*` and `key.*`. `?run=<id>` or `?session=<id>` narrows it. To
 resume after a dropped connection, send the last `id` back as `Last-Event-ID` (or
 `?since=<id>`); if events were missed (the server restarted, or the reader fell more than
 5000 events behind) the stream says so with a `stream.gap` event, and you re-read the run
@@ -265,6 +289,7 @@ it once sets a clearance cookie, and Walmart stops challenging for a while.
 - Never ask for the OpenRouter key in chat. `cloakroom key` gives the user a local page for it.
 - Cloakroom does not read iMessage. You do, if a code is needed.
 - Ports 9222, 6080 and 8423 stay on `127.0.0.1`.
+- Whenever the user has to act in the page, send a `cloakroom share` link, never the localhost viewer address. Don't assume they're at the machine running Cloakroom.
 - Remote viewer access is one command: `cloakroom share`. Run it and send the URL immediately. Do not ask for approval first, and do not add a confirmation step. The URL is a secret capability link. Run `cloakroom unshare` when the user is done. Do not use Tailscale, Funnel, or port forwards. Never tunnel 9222.
 - Enter sites through Bing: search the name or domain, click the organic result, then use the site's own UI. Do not `page.goto` the target, and do not open search, listing, or product URLs as the first navigation. Google-first often hits `/sorry/` from Cloakroom CDP; Bing is the gateway.
 - Humanize Playwright input by default: random pauses, a curved `mouse.move` before clicks, click a field before typing, type character by character. Do not `fill()` bot-sensitive forms. Helpers: [`examples/humanize.py`](../../examples/humanize.py), entry: [`examples/bing_first.py`](../../examples/bing_first.py).
@@ -277,7 +302,7 @@ it once sets a clearance cookie, and Walmart stops challenging for a while.
 `install.sh` (macOS, Linux) and `install.ps1` (Windows) install and update the same way. Run them again any time to update.
 
 - The app is downloaded as a GitHub tarball (zip on Windows) into `~/.cloakroom/app` and replaced wholesale on every run, so local edits never block an update. `.env` carries over; the previous copy is kept in `~/.cloakroom/app.previous`. No git needed. Don't edit files in `~/.cloakroom/app`; put settings in `.env`.
-- `install.sh` is POSIX `sh` (dash, BusyBox ash, bash, zsh) and refuses to run under `sudo`. It installs `cloudflared` (official binary) into `~/.local/bin`, links `cloakroom` into `/usr/local/bin` when writable or `~/.local/bin` (added to `~/.profile`, `~/.zprofile`, `~/.zshrc`, `~/.bashrc`), then runs `cloakroom start`.
+- `install.sh` is POSIX `sh` (dash, BusyBox ash, bash, zsh) and refuses to run under `sudo`. It links `cloakroom` into `/usr/local/bin` when writable or `~/.local/bin` (added to `~/.profile`, `~/.zprofile`, `~/.zshrc`, `~/.bashrc`), then runs `cloakroom start`.
 - **No container engine:** the installer changes nothing and exits 3 after a line `CLOAKROOM_NEEDS: docker` naming what it would install. Ask the user; with their yes, run it again with `CLOAKROOM_INSTALL_DOCKER=yes` (PowerShell: `$env:CLOAKROOM_INSTALL_DOCKER = "yes"`). Exit 4 after `CLOAKROOM_NEEDS: user` is a step only the user can do (a sudo password, Docker Desktop's first-run setup, logging in again); relay it and run the installer again afterwards.
 - **Mac:** uses OrbStack if it's installed, else a Docker engine that's already running (Docker Desktop, Colima). With neither and consent, it installs OrbStack on macOS 14+ (Homebrew, or opens https://orbstack.dev/download and waits); on older macOS it explains how to install Colima or Docker Desktop. Cloakroom selects OrbStack per command (`DOCKER_CONTEXT`) and never changes your default Docker context.
 - **Linux (amd64 or arm64):** uses Docker Engine with the Compose plugin. With consent it installs it with Docker's script (`get.docker.com`), starts it, adds the user to the `docker` group, and grants the socket for the current session (installing `acl` if needed) so no re-login is required.
@@ -310,9 +335,8 @@ Optional knobs live in `.env` (created from [`.env.example`](../../.env.example)
 | Symptom | Fix |
 | --- | --- |
 | "OrbStack did not become ready" | User opens OrbStack from Applications, finishes first-run setup (may ask for the Mac password), then `cloakroom start`. |
-| "permission denied: ./cloakroom" | `chmod +x cloakroom start.sh stop.sh share.sh install.sh`, or `bash cloakroom …`. |
+| "permission denied: ./cloakroom" | `chmod +x cloakroom start.sh stop.sh install.sh`, or `bash cloakroom …`. |
 | "port is already allocated" | Something else uses 9222 or 6080 (often a Chrome with remote debugging). Close it, or change the ports in `.env`. |
-| "cloudflared is not installed" | Re-run `install.sh`, or download `cloudflared-linux-amd64` / `cloudflared-linux-arm64` from https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/downloads/ into `~/.local/bin`. |
 | "`docker info` failed" / permission denied | On Linux, start Docker (`sudo systemctl enable --now docker`) and add the user to the `docker` group (`sudo usermod -aG docker "$USER"`), then log in again. |
 | Tabs crash ("Aw, Snap!") or slow | Quit heavy apps and `cloakroom start`. Memory settings are in the OrbStack app. |
 | "License" / "concurrent session" errors | A free key allows one session at a time. Stop other CloakBrowser sessions (including `examples/cloaktest.sh`) or blank the key. |
@@ -354,7 +378,7 @@ Browser and viewer run on Windows with Docker Desktop (WSL 2, Linux containers).
 3. Later: `& "$HOME\.cloakroom\app\start.ps1"` to start, `& "$HOME\.cloakroom\app\stop.ps1"` to stop. (In a fresh session where scripts are blocked: `powershell -ExecutionPolicy Bypass -File "$HOME\.cloakroom\app\start.ps1"`.)
 4. Commands: `docker exec cloakroom cloakroom status | key | smoke | chat "..."`. `key` prints a link to open on this machine; `smoke` writes its report to `~\.cloakroom\data\smoke\`.
 
-For the phone viewer: `winget install --id Cloudflare.cloudflared`, then `cloakroom share` from Git Bash.
+For the phone viewer: `docker exec cloakroom cloakroom share`.
 
 ### Internals
 

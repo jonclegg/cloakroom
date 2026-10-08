@@ -10,6 +10,8 @@
     POST /v1/smoke                   {"sites": [...], "wait": true}: reach a few big sites
                                      and screenshot them (report.html in <data>/smoke/)
     GET  /v1/smoke/{id}
+    POST /v1/share                   a private HTTPS link to the viewer (a Cloudflare quick tunnel)
+    POST /v1/unshare                 stop it
     GET  /v1/status
     GET  /v1/events                  Server-Sent Events: every state change, in order.
                                      ?run= or ?session= filters; resume with Last-Event-ID
@@ -22,8 +24,13 @@ conversation in it. One browser has one mouse, so runs go through a single worke
 thread, which is also the only thread that touches Playwright.
 
 Every state change (a run queued, started, stepped or finished; a session created
-or expired; the browser connecting; a smoke test; the key setup) is published once
-to the event stream, so a caller or a dashboard subscribes once instead of polling.
+or expired; the browser connecting; a share; a smoke test; the key setup) is
+published once to the event stream, so a caller or a dashboard subscribes once
+instead of polling.
+
+A run that ends `needs_user` (a sign-in, a payment, a check only the user can
+clear) starts the share itself, and carries its link under `needs_user`, so the
+user can finish the step from any machine and the caller continues the session.
 """
 
 from __future__ import annotations
@@ -34,7 +41,9 @@ import itertools
 import json
 import os
 import queue
+import re
 import secrets
+import subprocess
 import sys
 import threading
 import time
@@ -55,6 +64,10 @@ HOST_DATA_DIR = os.environ.get("CLOAKROOM_HOST_DATA_DIR", "")
 PORT = int(os.environ.get("CLOAKROOM_API_LISTEN_PORT", "8423"))
 HOST_PORT = os.environ.get("CLOAKROOM_API_HOST_PORT") or str(PORT)
 CDP_URL = os.environ.get("CDP_URL", "http://127.0.0.1:9222")
+VIEWER_PORT = 6080
+VIEWER_HOST_PORT = os.environ.get("CLOAKROOM_VIEWER_HOST_PORT") or str(VIEWER_PORT)
+SHARE_FILE = os.path.join(DATA_DIR, "share.json")
+SHARE_URL_SECONDS = 60
 SESSION_IDLE_SECONDS = int(os.environ.get("CLOAKROOM_SESSION_IDLE_SECONDS", "1800"))
 DEFAULT_MAX_STEPS = 40
 MAX_STEPS_LIMIT = 200
@@ -129,6 +142,77 @@ def step_event(run, step):
     return published
 
 
+class Share:
+    """The Cloudflare quick tunnel to the viewer: one at a time, reused until stopped.
+
+    Only the viewer (6080) is tunnelled, never CDP. The link is written to
+    <data>/share.json so `cloakroom status` on the host can show it.
+    """
+
+    def __init__(self, events):
+        self.events = events
+        self.process = None
+        self.url = None
+        self.lock = threading.Lock()
+        if os.path.exists(SHARE_FILE):
+            # Left by a container that stopped; its tunnel died with it.
+            os.remove(SHARE_FILE)
+
+    def link(self, reused):
+        return {"url": self.url, "viewer_local": f"http://127.0.0.1:{VIEWER_HOST_PORT}", "reused": reused}
+
+    def start(self):
+        with self.lock:
+            if self.process is not None and self.process.poll() is None:
+                return self.link(True)
+            log_path = os.path.join(DATA_DIR, "share.log")
+            with open(log_path, "w") as log:
+                self.process = subprocess.Popen(
+                    ["cloudflared", "tunnel", "--no-autoupdate", "--url", f"http://127.0.0.1:{VIEWER_PORT}"],
+                    stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)
+            deadline = time.time() + SHARE_URL_SECONDS
+            while time.time() < deadline:
+                with open(log_path) as fh:
+                    found = re.search(r"https://[A-Za-z0-9-]+\.trycloudflare\.com", fh.read())
+                if found:
+                    self.url = found.group(0)
+                    break
+                if self.process.poll() is not None:
+                    break
+                time.sleep(0.25)
+            else:
+                self.process.kill()
+            if self.url is None or self.process.poll() is not None:
+                with open(log_path) as fh:
+                    tail = fh.read()[-1500:]
+                self.process = None
+                raise RuntimeError(f"cloudflared did not give a share URL:\n{tail}")
+            with open(SHARE_FILE, "w") as fh:
+                json.dump(self.link(False), fh)
+        self.events.publish("share.started", url=self.url)
+        return self.link(False)
+
+    def stop(self):
+        with self.lock:
+            if self.process is None or self.process.poll() is not None:
+                self.process = None
+                return False
+            self.process.terminate()
+            try:
+                self.process.wait(5)
+            except subprocess.TimeoutExpired:
+                self.process.kill()
+            self.process = None
+            self.url = None
+            os.remove(SHARE_FILE)
+        self.events.publish("share.stopped")
+        return True
+
+    def active_url(self):
+        with self.lock:
+            return self.url if self.process is not None and self.process.poll() is None else None
+
+
 class Session:
     def __init__(self):
         self.id = new_id("s")
@@ -149,6 +233,7 @@ class Run:
         self.reply = None
         self.turn = None
         self.final_url = None
+        self.needs_user = None
         self.error = None
         self.started = now()
         self.finished = None
@@ -174,6 +259,7 @@ class Run:
             "files": files,
             "host_dir": os.path.join(HOST_DATA_DIR, "runs", self.id) if HOST_DATA_DIR else None,
             "final_url": self.final_url,
+            "needs_user": self.needs_user,
             "steps": len(turn.steps) if turn else 0,
             "sites": turn.sites if turn else [],
             "blocks": turn.blocks_seen if turn else [],
@@ -208,6 +294,7 @@ class Cloakroom:
 
     def __init__(self):
         self.events = Events()
+        self.share = Share(self.events)
         self.notebook = Notebook(DATA_DIR)
         self.sessions = {}
         self.runs = {}
@@ -268,6 +355,7 @@ class Cloakroom:
             "key_setup": self.setup_codes.status(),
             "queue_depth": self.queue.qsize(),
             "running": self.current.id if self.current else None,
+            "share_url": self.share.active_url(),
             "last_event_id": self.events.last_id(),
             "event_readers": self.events.readers,
             "sessions": [
@@ -348,7 +436,8 @@ class Cloakroom:
                 view = run.view()
                 self.events.publish("run.finished", run=run.id, session=run.session.id,
                                     status=run.status, reply=run.reply, error=run.error,
-                                    final_url=run.final_url, steps=view["steps"],
+                                    final_url=run.final_url, needs_user=run.needs_user,
+                                    steps=view["steps"],
                                     files=view["files"], cost_usd=view["cost_usd"])
                 run.done.set()
 
@@ -418,6 +507,9 @@ class Cloakroom:
 
         run.status = status
         run.reply = reply
+        if status == "needs_user":
+            share = self.share.start()
+            run.needs_user = {"task": reply, "share_url": share["url"]}
         session.conversation.append({"role": "caller", "text": run.message})
         session.conversation.append({"role": "cloakroom", "text": reply})
 
@@ -635,6 +727,13 @@ def make_handler(cloakroom, token):
             if parts == ["v1", "setup-link"]:
                 body = self._json_body()
                 return self._send(200, cloakroom.setup_link(bool(body.get("in_browser"))))
+            if parts == ["v1", "share"]:
+                try:
+                    return self._send(200, cloakroom.share.start())
+                except RuntimeError as exc:
+                    return self._send(502, {"error": str(exc)})
+            if parts == ["v1", "unshare"]:
+                return self._send(200, {"stopped": cloakroom.share.stop()})
             if parts == ["v1", "smoke"]:
                 body = self._json_body()
                 sites = body.get("sites") or []

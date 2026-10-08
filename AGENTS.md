@@ -50,7 +50,7 @@ The page answers only on this computer (`127.0.0.1`). If the user isn't at this 
 
 The ports in these instructions (9222 CDP, 6080 viewer, 8423 API) are the defaults. If something else on the computer already uses them, the user sets other ports in `~/.cloakroom/app/.env`. `cloakroom status --json` always reports the real URLs.
 
-On Windows there is no `cloakroom` command on the host. Use `docker exec cloakroom cloakroom <command>` for `status`, `key`, `smoke`, `chat`, `run` and `notes`. Start and stop with `~\.cloakroom\app\start.ps1` and `stop.ps1`. For the key, run `docker exec cloakroom cloakroom key --json`, open the `setup_url` for the user with `Start-Process <url>`, then wait on that same link with `docker exec cloakroom cloakroom key --watch`.
+On Windows there is no `cloakroom` command on the host. Use `docker exec cloakroom cloakroom <command>` for `status`, `key`, `smoke`, `chat`, `run`, `notes`, `share` and `unshare`. Start and stop with `~\.cloakroom\app\start.ps1` and `stop.ps1`. For the key, run `docker exec cloakroom cloakroom key --json`, open the `setup_url` for the user with `Start-Process <url>`, then wait on that same link with `docker exec cloakroom cloakroom key --watch`.
 
 ## Using Cloakroom
 
@@ -58,11 +58,11 @@ On Windows there is no `cloakroom` command on the host. Use `docker exec cloakro
 cloakroom status --json          # is it ready, viewer and API URLs, key set?
 cloakroom start                  # if not ready
 cloakroom chat "<message>"       # Cloakroom drives the browser with DeepSeek and replies
-cloakroom share --json           # phone viewer; send the url immediately
+cloakroom share --json           # remote viewer link; send the url immediately
 cloakroom unshare                # stop the share when they are done
 ```
 
-**Prefer talking to Cloakroom.** `cloakroom chat "search walmart.com for paper towels"` sends a message to the chat API inside the container. Cloakroom screenshots the page, DeepSeek picks the next action, and Cloakroom carries it out as real mouse and keyboard input, press-and-hold included. When it's done it replies with a status: `done`, `needs_input`, `blocked` or `failed`. Follow up with `--session <id>` to stay in the same tab. It can read pages and save a listing's photos, and it keeps per-site notes so the next run starts out knowing more. See [`skills/cloakroom/SKILL.md`](skills/cloakroom/SKILL.md#cloakroom-chat-cloakroom-drives-you-talk).
+**Prefer talking to Cloakroom.** `cloakroom chat "search walmart.com for paper towels"` sends a message to the chat API inside the container. Cloakroom screenshots the page, DeepSeek picks the next action, and Cloakroom carries it out as real mouse and keyboard input, press-and-hold included. When it's done it replies with a status: `done`, `needs_input`, `needs_user` or `failed`. Follow up with `--session <id>` to stay in the same tab. It can read pages and save a listing's photos, and it keeps per-site notes so the next run starts out knowing more. See [`skills/cloakroom/SKILL.md`](skills/cloakroom/SKILL.md#cloakroom-chat-cloakroom-drives-you-talk).
 
 **Or drive it yourself** with Playwright: `connect_over_cdp("http://127.0.0.1:9222")`, then use `browser.contexts[0]`, which is the saved profile with its cookies. Send mouse and keyboard input through [`examples/humanize.py`](examples/humanize.py), not `page.mouse` or `page.keyboard`. It delivers real X11 events through Cloakroom's `/input` endpoint.
 
@@ -72,6 +72,8 @@ If a site asks for a two-factor code, **you** get it (for example from Messages)
 
 When the user wants the viewer on a phone, away from home, or any remote access, run `cloakroom share` and send the HTTPS URL in the same turn. Do not ask them to confirm first; the command does not prompt. The URL is a secret capability link: anyone who has it can control the logged-in browser. When they're done, run `cloakroom unshare`. Do **not** use Tailscale, Funnel, or port forwarding. Never expose port 9222. `cloakroom share` tunnels only the viewer (6080), and ports 6080, 8423 and 9222 stay bound to `127.0.0.1`.
 
-Never ask the user for a password in chat. They type it in the viewer (http://127.0.0.1:6080, or the share URL). If they're away and need to paste the OpenRouter key, run `cloakroom key --in-browser` and `cloakroom share`, and they paste it in the viewer.
+**When a run ends `needs_user`**, the page needs the user's own hands: a sign-in, a payment, or a bot check Cloakroom couldn't clear. Cloakroom has already started the share. Send the user `needs_user.task` and `needs_user.share_url` in the same turn, and say the link is secret. Don't assume they're at the machine running Cloakroom. When they say they're done, continue with `--session <id>` (same tab, now signed in), and run `cloakroom unshare` once nobody needs the viewer. Do the same yourself, with `cloakroom share --json`, whenever the user has to act in the page while you drive it over CDP.
+
+Never ask the user for a password in chat. They type it in the viewer, through the share URL. Always send the share URL, not the localhost viewer address: the user is usually not at the machine running Cloakroom. If they're away and need to paste the OpenRouter key, run `cloakroom key --in-browser` and `cloakroom share`, and they paste it in the viewer.
 
 On a Mac, the browser presents as a Mac: macOS persona, a Retina screen, and the Mac's own fonts. On Linux and Windows it presents as a Windows PC. Its timezone and language follow the IP its traffic leaves from.

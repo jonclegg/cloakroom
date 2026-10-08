@@ -6,6 +6,14 @@ RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends tzdata x11vnc novnc websockify \
     && rm -rf /var/lib/apt/lists/*
 
+# `cloakroom share`: a Cloudflare quick tunnel to the viewer, run by the chat API so
+# a run that needs the user can hand them a link. The host needs nothing for it.
+ARG TARGETARCH
+RUN curl -fsSL --retry 3 -o /usr/local/bin/cloudflared \
+        "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-${TARGETARCH}" \
+    && chmod +x /usr/local/bin/cloudflared \
+    && cloudflared --version
+
 COPY index.html /usr/share/novnc/index.html
 # Safari can keep a cached noVNC <=1.3 ui.js, which crashes on load if this
 # element is missing (upstream removed it in 1.4). Newer ui.js ignores it. Inline
@@ -13,7 +21,7 @@ COPY index.html /usr/share/novnc/index.html
 RUN sed -i 's#<textarea id="noVNC_clipboard_text" rows=5></textarea>#&\n                <input id="noVNC_clipboard_clear_button" type="button" style="display:none">#' /usr/share/novnc/vnc.html \
     && grep -q 'id="noVNC_clipboard_clear_button"' /usr/share/novnc/vnc.html
 COPY cloakroom-serve.sh /usr/local/bin/cloakroom-serve
-# `docker exec cloakroom cloakroom chat|key|smoke|status ...` works from any host
+# `docker exec cloakroom cloakroom chat|key|smoke|share|status ...` works from any host
 # shell (macOS, Linux, PowerShell), with nothing installed on the host.
 COPY cloakroom-client.sh /usr/local/bin/cloakroom
 RUN chmod +x /usr/local/bin/cloakroom-serve /usr/local/bin/cloakroom

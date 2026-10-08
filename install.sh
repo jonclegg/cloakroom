@@ -293,49 +293,6 @@ Install it, then run this installer again:
   say "Container engine: Docker Engine."
 }
 
-# ---------------------------------------------------------------- cloudflared (for cloakroom share)
-
-cloudflared_asset() {
-  case "$(uname -s):$(uname -m)" in
-    Darwin:arm64) say cloudflared-darwin-arm64.tgz ;;
-    Darwin:x86_64) say cloudflared-darwin-amd64.tgz ;;
-    Linux:x86_64|Linux:amd64) say cloudflared-linux-amd64 ;;
-    Linux:aarch64|Linux:arm64) say cloudflared-linux-arm64 ;;
-    *) fail "No cloudflared build for $(uname -s) $(uname -m)." ;;
-  esac
-}
-
-ensure_cloudflared() {
-  dest_dir="${HOME}/.local/bin"
-  case ":${PATH}:" in
-    *":${dest_dir}:"*) ;;
-    *) PATH="${dest_dir}:${PATH}"; export PATH ;;
-  esac
-  if command -v cloudflared >/dev/null 2>&1; then
-    say "cloudflared is installed."
-    return 0
-  fi
-  asset="$(cloudflared_asset)"
-  url="https://github.com/cloudflare/cloudflared/releases/latest/download/${asset}"
-  say "Downloading cloudflared (used by 'cloakroom share')..."
-  mkdir -p "$dest_dir"
-  tmp="$(mktemp -d)"
-  case "$asset" in
-    *.tgz)
-      curl -fsSL --retry 3 --connect-timeout 30 --max-time 300 -o "${tmp}/cloudflared.tgz" "$url"
-      tar -xzf "${tmp}/cloudflared.tgz" -C "$tmp"
-      mv "${tmp}/cloudflared" "${dest_dir}/cloudflared"
-      ;;
-    *)
-      curl -fsSL --retry 3 --connect-timeout 30 --max-time 300 -o "${tmp}/cloudflared" "$url"
-      mv "${tmp}/cloudflared" "${dest_dir}/cloudflared"
-      ;;
-  esac
-  rm -rf "$tmp"
-  chmod +x "${dest_dir}/cloudflared"
-  say "Installed cloudflared to ${dest_dir}/cloudflared"
-}
-
 # ---------------------------------------------------------------- the app
 
 # Run as ./install.sh from a clone: use that clone in place (for development).
@@ -428,7 +385,6 @@ main() {
     Linux) ensure_linux_docker ;;
     *) fail "This installer is for macOS and Linux. On Windows, see https://github.com/jonclegg/cloakroom#quickstart" ;; # // pragma: allowlist secret
   esac
-  ensure_cloudflared
   install_app
   link_cli
   say "Starting Cloakroom..."

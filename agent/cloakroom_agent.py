@@ -14,6 +14,10 @@ Design notes
   PerimeterX press-and-hold the model picks the button centre to the pixel.
 * Bot checks are detected from the DOM as well as by the model, and the model
   works them: press-and-hold and the like.
+* What only the user can do (a sign-in, a payment, a check the model cannot
+  clear) ends the turn with status `needs_user`; the server then shares the
+  viewer so the user can do it from anywhere. The model never types into a
+  password field: a `type` aimed at one becomes that handoff.
 * The model keeps notes for itself. Within a turn, `remember` adds to a working
   memory that is always in the prompt (the step history is only a window). Across
   runs, `note` writes to a per-site notebook that is loaded whenever the browser
@@ -106,7 +110,7 @@ ACTION_SCHEMA = """Reply with ONLY a JSON object:
  "text": "<text to type, key name, domain, url, folder name, or your reply; else null>",
  "amount": <int, only for scroll: pixels, positive is down>,
  "hold_ms": <int, only for hold>,
- "status": "done"|"needs_input"|"blocked"|"failed",  (only for reply)
+ "status": "done"|"needs_input"|"needs_user"|"failed",  (only for reply)
  "remember": "<optional: a fact to add to your working memory for this message>",
  "note": {"site": "<domain or general>", "text": "<optional: a lesson for future runs>"},
  "reason": "<why>"}"""
@@ -317,6 +321,25 @@ def detect_block(page):
     return sorted(set(found))
 
 
+PASSWORD_TARGET_SCRIPT = """([x, y]) => {
+  const isPassword = (el) => el && el.tagName === 'INPUT' && el.type === 'password';
+  return isPassword(x === null || y === null ? null : document.elementFromPoint(x, y)) || isPassword(document.activeElement);
+}"""
+
+
+def types_into_password(page, decision):
+    """True when a `type` would land in a password field: the one at x,y, or the focused one.
+
+    Only the main frame is checked; a sign-in inside an iframe is the model's call.
+    """
+    if (decision.get("action") or "").lower() != "type":
+        return False
+    try:
+        return bool(page.evaluate(PASSWORD_TARGET_SCRIPT, [decision.get("x"), decision.get("y")]))
+    except Exception:  # noqa: BLE001 - page navigated mid-evaluate
+        return False
+
+
 def read_page(page):
     """The page's visible text and links, for the model to read on its next step."""
     content = page.evaluate(
@@ -439,8 +462,13 @@ def decide(page, shot, turn, model):
         f"one. Use it on a product or listing page.\n"
         f"- reply: send `text` to the caller and end this message. status \"done\" "
         f"when finished (include what they asked for), \"needs_input\" to ask them "
-        f"something (a code, a choice), \"blocked\" for a bot check you cannot clear, "
-        f"\"failed\" otherwise.\n"
+        f"something they can answer in chat (a texted code, a choice), \"needs_user\" "
+        f"when the user must act in the page themselves, \"failed\" otherwise.\n"
+        f"Never invent a username, password, payment detail or personal detail the "
+        f"conversation does not give you. A sign-in, a payment, or a bot check you "
+        f"cannot clear is \"needs_user\": reply with `text` saying exactly what they "
+        f"need to do (\"Sign in to amazon.com\"). They do it in the viewer, then the "
+        f"caller tells you to carry on.\n"
         f"For several items from a list (the first three results, every order), "
         f"`read` the list once, `remember` each item's URL, then `goto` them one by one; "
         f"going back to a results page is slow and loses your place.\n"
@@ -456,7 +484,7 @@ def decide(page, shot, turn, model):
         f"- checkbox (\"I am not a robot\", Turnstile): action \"click\" on the checkbox.\n"
         f"- image_captcha: read the prompt, then \"click\" each matching tile centre in "
         f"turn, one action per step. If tiles are ambiguous, say so in `reason`.\n"
-        f"When the check is gone, keep going.\n"
+        f"When the check is gone, keep going. If it will not clear, reply needs_user.\n"
         f"Detected from the DOM right now: {turn.dom_blocks or 'no bot check'}\n"
         f"{ACTION_SCHEMA}"
     )
@@ -730,9 +758,15 @@ def run_turn(page, turn, on_step):
             },
         }
 
+        if types_into_password(page, decision):
+            decision = {**decision, "action": "reply", "status": "needs_user",
+                        "text": f"Sign in to {site or url} in the viewer, then tell me to carry on."}
+            record.update(action="reply", text=decision["text"],
+                          reason="a password field: only the user signs in")
+
         if (decision.get("action") or "").lower() == "reply":
             status = decision.get("status") or "done"
-            if status not in ("done", "needs_input", "blocked", "failed"):
+            if status not in ("done", "needs_input", "needs_user", "failed"):
                 status = "done"
             record["did"] = f"reply ({status})"
             turn.steps.append(record)

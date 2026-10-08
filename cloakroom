@@ -32,7 +32,7 @@ Usage: cloakroom <command> [--json]
   smoke [sites]  Reach a few big sites from Bing and open a report with
                  screenshots (default: amazon walmart target bestbuy).
 
-chat, run, cancel, notes, key and smoke run inside the container, so from any
+chat, run, cancel, notes, key, smoke, share and unshare run inside the container, so from any
 shell (PowerShell too) they also work as: docker exec cloakroom cloakroom <command>
 EOF
   exit 2
@@ -81,8 +81,21 @@ case "$command" in
   start) exec bash "${CLOAKROOM_ROOT}/start.sh" ;;
   stop) exec bash "${CLOAKROOM_ROOT}/stop.sh" ;;
   status) status "$@" ;;
-  share) exec bash "${CLOAKROOM_ROOT}/share.sh" "$@" ;;
-  unshare) exec bash "${CLOAKROOM_ROOT}/share.sh" stop "$@" ;;
+  share)
+    if [ "$(health)" != healthy ]; then
+      [ "${1:-}" = --json ] && echo '{"event":"starting","detail":"Starting the browser."}'
+      bash "${CLOAKROOM_ROOT}/start.sh" >&2
+    fi
+    exec docker exec cloakroom cloakroom share "$@"
+    ;;
+  unshare)
+    if [ "$(health)" != healthy ]; then
+      # The tunnel runs in the container, so it stopped with it.
+      [ "${1:-}" = --json ] && echo '{"event":"share_stopped","stopped":false}' || echo "No remote viewer is running."
+      exit 0
+    fi
+    exec docker exec cloakroom cloakroom unshare "$@"
+    ;;
   key)
     require_running
     if [ "${1:-}" = --json ]; then
