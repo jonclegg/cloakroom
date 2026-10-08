@@ -24,6 +24,7 @@
     POST /v1/devices/sign-out-everywhere
     GET  /console                    the web console, or its sign-in page
     POST /console/sign-in            the console password -> a device cookie for 30 days
+    POST /v1/password                {"current", "password", "again"}: change it from a signed-in console
     GET  /password?code=             set the console password (one-time link; works through the share)
     GET  /viewer/...                 the live browser (noVNC), for the console
     GET  /v1/status
@@ -514,7 +515,7 @@ class Cloakroom:
         code = self.setup_codes.issue()
         self.events.publish("key.issued", in_browser=in_browser)
         if in_browser:
-            url = f"http://127.0.0.1:{PORT}/setup?code={code}"
+            url = f"http://127.0.0.1:{PORT}/setup?code={code}&in_browser=1"
             self.queue.put(lambda context: context.new_page().goto(url))
         else:
             url = f"http://127.0.0.1:{HOST_PORT}/setup?code={code}"
@@ -745,9 +746,11 @@ def make_handler(cloakroom, token):
         def log_message(self, fmt, *args):
             sys.stderr.write(f"api {self.address_string()} {fmt % args}\n")
 
-        def _send(self, code, payload):
+        def _send(self, code, payload, cookie=None):
             body = json.dumps(payload, indent=2).encode()
             self.send_response(code)
+            if cookie:
+                self.send_header("Set-Cookie", cookie)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(body)))
             # The share tunnel goes through Cloudflare's CDN: nothing private may be cached there.
@@ -799,7 +802,10 @@ def make_handler(cloakroom, token):
                 return self._send_html(401, console_auth.sign_in_page(
                     password_set, local_console=f"http://127.0.0.1:{HOST_PORT}/console"))
             with open(CONSOLE_PAGE) as fh:
-                return self._send_html(200, fh.read())
+                page = fh.read()
+            return self._send_html(200, page.replace("<!-- password fields -->", console_auth.password_fields(
+                "New password", f"At least {console_auth.MIN_LENGTH} characters. Your password manager can save it.",
+                required=True)))
 
         def _sign_in(self):
             form = self._form()
@@ -812,13 +818,19 @@ def make_handler(cloakroom, token):
             except console_auth.SignInRefused as exc:
                 cloakroom.events.publish("console.sign_in_refused")
                 return self._send_html(401, console_auth.sign_in_page(True, str(exc), session))
-            self.send_response(303)
-            self.send_header("Set-Cookie", self._device_cookie())
-            self.send_header("Location", "/console" + (f"#{session}" if SESSION_ID.match(session) else ""))
-            self.send_header("Content-Length", "0")
-            self.end_headers()
+            self._to_console(session)
             cloakroom.events.publish("console.signed_in")
             return None
+
+        def _to_console(self, session="", saved=None):
+            """Sign this browser in and send it to the console: on `session` if given, with
+            `saved` telling the console what was just saved."""
+            self.send_response(303)
+            self.send_header("Set-Cookie", self._device_cookie())
+            self.send_header("Location", "/console" + (f"?saved={saved}" if saved else "")
+                             + (f"#{session}" if SESSION_ID.match(session) else ""))
+            self.send_header("Content-Length", "0")
+            self.end_headers()
 
         def _password(self, method):
             """Set the console password from a one-time link. Not localhost-only, unlike /setup:
@@ -841,8 +853,26 @@ def make_handler(cloakroom, token):
             cloakroom.set_password(password)
             cloakroom.password_progress(code, "saved")
             cloakroom.password_codes.consume(code)
-            console = "/console" + (f"#{session}" if SESSION_ID.match(session) else "")
-            return self._send_html(200, key_setup.password_saved_page(console), self._device_cookie())
+            return self._to_console(session, saved="password")
+
+        def _change_password(self):
+            """A new console password from a signed-in console, which gives the current one first.
+            Not for the bearer token: an agent never handles the password."""
+            if self._device() is None:
+                return self._send(403, {"error": "change the console password from a signed-in console"})
+            body = self._json_body()
+            try:
+                cloakroom.password.check(body.get("current", ""))
+            except console_auth.SignInRefused as exc:
+                cloakroom.events.publish("console.sign_in_refused")
+                return self._send(403, {"error": str(exc).replace("Wrong password", "Wrong current password")})
+            try:
+                console_auth.check_new(body.get("password", ""), body.get("again", ""))
+            except ValueError as exc:
+                return self._send(400, {"error": str(exc)})
+            cloakroom.set_password(body["password"])
+            # Every device is signed out with the old password; this one carries on.
+            return self._send(200, {"saved": True}, self._device_cookie())
 
         def _proxy_viewer(self):
             """Pass /viewer/... through to noVNC: its files, and its websocket byte for byte.
@@ -912,13 +942,14 @@ def make_handler(cloakroom, token):
                 return self._send(403, {"error": "the setup page only answers on localhost"})
             password_set = cloakroom.password.is_set()
             if method == "GET":
-                code = (parse_qs(urlparse(self.path).query).get("code") or [""])[0]
+                query = parse_qs(urlparse(self.path).query)
+                code, in_browser = (query.get("code") or [""])[0], bool(query.get("in_browser"))
                 if not cloakroom.setup_codes.valid(code):
                     return self._send_html(410, key_setup.expired_page("cloakroom key"))
                 cloakroom.key_progress(code, "opened")
-                return self._send_html(200, key_setup.form_page(code, password_set))
+                return self._send_html(200, key_setup.form_page(code, password_set, in_browser))
             form = self._form()
-            code = form.get("code", "")
+            code, in_browser = form.get("code", ""), bool(form.get("in_browser"))
             key = form.get("key", "").strip()
             password, again = form.get("password", ""), form.get("again", "")
             if not cloakroom.setup_codes.valid(code):
@@ -931,14 +962,17 @@ def make_handler(cloakroom, token):
                 info = key_setup.check_key(key)
             except ValueError as exc:
                 cloakroom.key_progress(code, "rejected", str(exc))
-                return self._send_html(400, key_setup.form_page(code, password_set, str(exc)))
+                return self._send_html(400, key_setup.form_page(code, password_set, in_browser, str(exc)))
             key_setup.save_key(key)
             if new_password:
                 cloakroom.set_password(password)
             cloakroom.key_progress(code, "saved")
             cloakroom.setup_codes.consume(code)
             print("openrouter key saved", flush=True)
-            return self._send_html(200, key_setup.saved_page(info, new_password))
+            if in_browser:
+                # Cloakroom's own tab, seen through the console: the console stays where it is.
+                return self._send_html(200, key_setup.saved_page(info, new_password))
+            return self._to_console(saved="setup")
 
         def _parts(self):
             return [unquote(part) for part in self.path.split("?")[0].strip("/").split("/")]
@@ -1137,6 +1171,8 @@ def make_handler(cloakroom, token):
                 return self._send(200, {"password_url": cloakroom.password_link(base), "shared": shared,
                                         "console_password": cloakroom.password.is_set(),
                                         "expires_in_seconds": key_setup.CODE_SECONDS})
+            if parts == ["v1", "password"]:
+                return self._change_password()
             if parts == ["v1", "devices", "sign-out-everywhere"]:
                 return self._send(200, {"signed_out": cloakroom.devices.sign_out()})
             if len(parts) == 4 and parts[:2] == ["v1", "devices"] and parts[3] == "sign-out":

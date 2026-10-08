@@ -6,7 +6,9 @@ The user opens it in their own browser, or in Cloakroom's browser through the
 viewer when they are away from the machine, pastes the key and chooses the
 console password. Cloakroom checks the key with OpenRouter and writes
 <data>/openrouter.key, mode 600. The model reads that file on every call, so
-nothing restarts. Once a password is set, the page can leave it as it is.
+nothing restarts. Once a password is set, the page can leave it as it is. Saving
+signs that browser in to the console and opens it, except in Cloakroom's own
+browser, which the user is already watching through the console.
 
 The page takes no bearer token (the user has none), so it is guarded instead:
 the one-time code, and a Host header that must be localhost, which stops another
@@ -175,6 +177,7 @@ FORM = """<h1>Set up Cloakroom</h1>
 {message}
 <form method="post" action="/setup">
   <input type="hidden" name="code" value="{code}">
+  {in_browser}
   <input type="text" name="username" value="cloakroom" autocomplete="username" hidden>
   <label for="key">OpenRouter key</label>
   <input id="key" name="key" type="password" autocomplete="off" spellcheck="false"
@@ -204,25 +207,25 @@ PASSWORD_FORM = """<h1>{title}</h1>
 SAVED = """<h1 class="good">Saved</h1>
 <p>OpenRouter accepted the key. {detail}</p>
 <p>{password}</p>
-<p>You can close this page and go back to your agent.</p>"""
-
-PASSWORD_SAVED = """<h1 class="good">Password saved</h1>
-<p>Every other device is signed out. This one is signed in for 30 days.</p>
-<p><a href="{console}">Open the console</a></p>"""
+<p>You can close this tab and go back to your agent.</p>"""
 
 EXPIRED = """<h1>This link has expired</h1>
 <p>Setup links work once and last 15 minutes. Ask your agent for a new one
 (<code>{command}</code>).</p>"""
 
 
-def form_page(code, password_set, error=None):
+def form_page(code, password_set, in_browser, error=None):
+    """`in_browser`: the page is in Cloakroom's own browser, so saving stays on it
+    instead of going on to the console."""
     message = f'<p class="bad">{html.escape(error)}</p>' if error else ""
     fields = console_auth.password_fields(
         "New password" if password_set else "Password",
         "Leave both empty to keep the password you have." if password_set
         else f"At least {console_auth.MIN_LENGTH} characters. Your password manager can save it.",
         required=not password_set)
-    return PAGE.format(body=FORM.format(message=message, code=html.escape(code), password_fields=fields))
+    return PAGE.format(body=FORM.format(
+        message=message, code=html.escape(code), password_fields=fields,
+        in_browser='<input type="hidden" name="in_browser" value="1">' if in_browser else ""))
 
 
 def saved_page(info, password_changed):
@@ -242,9 +245,6 @@ def password_page(code, session, password_set, error=None):
         else "Saving it signs in this browser for 30 days.",
         message=message, code=html.escape(code), session=html.escape(session), password_fields=fields))
 
-
-def password_saved_page(console):
-    return PAGE.format(body=PASSWORD_SAVED.format(console=html.escape(console)))
 
 
 def expired_page(command):

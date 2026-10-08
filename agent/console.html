@@ -176,7 +176,7 @@ dialog::backdrop { background: rgba(0,0,0,.6); }
 dialog .dialog-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 14px 18px; border-bottom: 1px solid var(--line); }
 dialog h2 { margin: 0; font-size: 16px; }
 dialog .body { padding: 14px 18px 18px; }
-dialog .body > p { margin: 0 0 8px; color: var(--muted); font-size: 13px; }
+dialog section > p { margin: 0 0 8px; color: var(--muted); font-size: 13px; }
 .device { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-top: 1px solid var(--line-soft); }
 .device .what { flex: 1; min-width: 0; }
 .device .what b { display: block; }
@@ -184,6 +184,35 @@ dialog .body > p { margin: 0 0 8px; color: var(--muted); font-size: 13px; }
 .device .tag { font-size: 12px; color: var(--ok-ink); white-space: nowrap; }
 .btn.danger { color: var(--bad); background: transparent; margin-top: 12px; }
 .welcome .btn { display: none; }
+.notice { display: flex; align-items: flex-start; gap: 12px; margin: 12px 18px 0; padding: 10px 10px 10px 14px; border-radius: 8px; background: var(--ok-wash); color: var(--ok-ink); border: 1px solid #1F4A2C; font-size: 13px; }
+.notice span { flex: 1; min-width: 0; padding-top: 4px; }
+.notice b { color: var(--ink); }
+dialog section + section { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); }
+dialog h3 { margin: 0 0 4px; font-size: 14px; }
+dialog .row { display: flex; align-items: center; gap: 12px; }
+dialog .row p { flex: 1; margin: 0; color: var(--muted); font-size: 13px; }
+.saved-note { color: var(--ok-ink); font-size: 13px; margin: 8px 0 0; }
+/* the new-password fields (console_auth.FIELDS), in the console's look */
+#password-form { --good: var(--ok-ink); --fair: var(--needs); }
+#password-form label { display: block; font-weight: 600; font-size: 13px; margin: 14px 0 6px; }
+#password-form input:not([hidden]) { width: 100%; min-height: 40px; padding: 0 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--ground); }
+#password-form input[aria-invalid=true] { border-color: var(--bad); }
+#password-form .hint { font-size: 12px; color: var(--muted); margin: 6px 0 0; }
+#password-form .hint.before { margin: -2px 0 8px; }
+#password-form .bad, #password-form .form-error { color: var(--bad); }
+#password-form .form-error { font-size: 13px; margin: 12px 0 0; }
+#password-form .field { position: relative; }
+#password-form .field input { padding-right: 64px; }
+#password-form .field .show { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); padding: 3px 9px; border: 0; border-radius: 6px; background: none; color: var(--accent); font-size: 13px; font-weight: 600; cursor: pointer; }
+#password-form .field .show:hover { background: var(--accent-wash); }
+#password-form .field .tick { position: absolute; right: 14px; top: 50%; transform: translateY(-50%); color: var(--ok-ink); font-weight: 700; visibility: hidden; }
+#password-form .field .tick.on { visibility: visible; }
+#password-form .strength { display: flex; align-items: center; gap: 10px; margin-top: 8px; min-height: 18px; }
+#password-form .segments { flex: 1; display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+#password-form .segments i { height: 4px; border-radius: 2px; background: var(--line); transition: background .15s; }
+#password-form .verdict { font-size: 12px; font-weight: 600; min-width: 6.5em; text-align: right; }
+#password-form .advice { margin-top: 2px; }
+#password-form .buttons { display: flex; gap: 8px; margin-top: 16px; }
 .error { margin: 12px 18px 0; padding: 10px 14px; border-radius: 8px; background: #2A1414; color: var(--bad); border: 1px solid #5A2626; font-size: 13px; }
 .scrim { display: none; }
 
@@ -218,7 +247,7 @@ dialog .body > p { margin: 0 0 8px; color: var(--muted); font-size: 13px; }
   .thread { padding: 10px 16px 14px; }
   .compose { padding: 8px 16px calc(10px + env(safe-area-inset-bottom, 0px)); }
   .compose .hint { display: none; }
-  .error { margin-inline: 16px; }
+  .error, .notice { margin-inline: 16px; }
 }
 @media (prefers-reduced-motion: reduce) {
   * { animation: none !important; transition: none !important; }
@@ -237,18 +266,40 @@ dialog .body > p { margin: 0 0 8px; color: var(--muted); font-size: 13px; }
     <span data-testid="browser-state"><span class="dot" id="browser-dot"></span><span id="browser-text">Connecting…</span></span>
     <span data-testid="events-state"><span class="dot" id="events-dot"></span><span id="events-text">Live updates off</span></span>
   </div>
-  <button class="btn small quiet devices-button" type="button" id="devices-open" data-testid="devices-open">Devices</button>
+  <button class="btn small quiet devices-button" type="button" id="devices-open" data-testid="devices-open">Password &amp; devices</button>
 </header>
 
 <dialog id="devices" aria-labelledby="devices-title" data-testid="devices">
   <div class="dialog-head">
-    <h2 id="devices-title">Signed-in devices</h2>
+    <h2 id="devices-title">Password &amp; devices</h2>
     <button class="btn quiet" type="button" id="devices-close">Close</button>
   </div>
   <div class="body">
-    <p>Each one stays signed in for 30 days on this share link. A new console password, or stopping the share, signs them out.</p>
-    <div id="device-list" data-testid="device-list"></div>
-    <button class="btn danger" type="button" id="sign-out-everywhere" data-testid="sign-out-everywhere">Sign out everywhere</button>
+    <section aria-labelledby="password-title">
+      <h3 id="password-title">Console password</h3>
+      <div class="row" id="password-closed">
+        <p>You type it to open the console from a share link. A new one signs out every other device.</p>
+        <button class="btn" type="button" id="password-open" data-testid="change-password">Change</button>
+      </div>
+      <p class="saved-note" id="password-saved" hidden role="status">Password changed. Every other device is signed out.</p>
+      <form id="password-form" hidden data-testid="password-form">
+        <input type="text" name="username" value="cloakroom" autocomplete="username" hidden>
+        <label for="current-password">Current password</label>
+        <input id="current-password" name="current" type="password" autocomplete="current-password" required>
+        <!-- password fields -->
+        <p class="form-error" id="password-error" role="alert" hidden></p>
+        <div class="buttons">
+          <button class="btn primary" type="submit">Save password</button>
+          <button class="btn quiet" type="button" id="password-cancel">Cancel</button>
+        </div>
+      </form>
+    </section>
+    <section aria-labelledby="devices-list-title">
+      <h3 id="devices-list-title">Signed-in devices</h3>
+      <p>Each one stays signed in for 30 days on this share link. A new console password, or stopping the share, signs them out.</p>
+      <div id="device-list" data-testid="device-list"></div>
+      <button class="btn danger" type="button" id="sign-out-everywhere" data-testid="sign-out-everywhere">Sign out everywhere</button>
+    </section>
   </div>
 </dialog>
 
@@ -266,6 +317,10 @@ dialog .body > p { margin: 0 0 8px; color: var(--muted); font-size: 13px; }
   </nav>
 
   <main class="stage" id="detail">
+    <div class="notice" id="notice" hidden role="status" data-testid="saved-notice">
+      <span id="notice-text"></span>
+      <button class="btn quiet small" type="button" id="notice-close">Dismiss</button>
+    </div>
     <div class="error" id="s-error" hidden role="alert" data-testid="error"></div>
     <div class="welcome" id="welcome">
       <h1>Nothing to show yet</h1>
@@ -816,8 +871,36 @@ async function showDevices() {
   if (!$('devices').open) $('devices').showModal();
 }
 
-$('devices-open').addEventListener('click', () => showDevices().catch(showError));
+function setPasswordForm(open) {
+  $('password-form').reset();
+  $('password-form').hidden = !open;
+  $('password-closed').hidden = open;
+  $('password-error').hidden = true;
+  // Clears the meter and the match check the reset left behind.
+  $('password').dispatchEvent(new Event('input'));
+  if (open) { $('password-saved').hidden = true; $('current-password').focus(); }
+}
+
+$('devices-open').addEventListener('click', () => { setPasswordForm(false); $('password-saved').hidden = true; showDevices().catch(showError); });
 $('devices-close').addEventListener('click', () => $('devices').close());
+$('password-open').addEventListener('click', () => setPasswordForm(true));
+$('password-cancel').addEventListener('click', () => setPasswordForm(false));
+$('password-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const form = new FormData($('password-form'));
+  const save = $('password-form').querySelector('button[type=submit]');
+  save.disabled = true;
+  try {
+    await api('POST', '/v1/password', { current: form.get('current'), password: form.get('password'), again: form.get('again') });
+    setPasswordForm(false);
+    $('password-saved').hidden = false;
+    await showDevices();
+  } catch (error) {
+    $('password-error').textContent = error.message;
+    $('password-error').hidden = false;
+    save.disabled = false;
+  }
+});
 $('device-list').addEventListener('click', async (event) => {
   const button = event.target.closest('[data-device]');
   if (!button) return;
@@ -835,6 +918,19 @@ $('drawer-open').addEventListener('click', () => setDrawer(true));
 $('scrim').addEventListener('click', () => setDrawer(false));
 document.querySelector('[data-open-drawer]').addEventListener('click', () => { setDrawer(true); $('new-message').focus(); });
 document.addEventListener('keydown', (event) => { if (event.key === 'Escape') setDrawer(false); });
+
+// After the setup page or a password link: say what was saved, once.
+const SAVED = {
+  setup: '<b>Cloakroom is set up.</b> OpenRouter accepted the key, and this browser is signed in to the console for 30 days.',
+  password: '<b>Password saved.</b> Every other device is signed out. This one is signed in for 30 days.',
+};
+const saved = new URLSearchParams(location.search).get('saved');
+if (SAVED[saved]) {
+  $('notice-text').innerHTML = SAVED[saved];
+  $('notice').hidden = false;
+}
+if (saved) history.replaceState(null, '', location.pathname + location.hash);
+$('notice-close').addEventListener('click', () => { $('notice').hidden = true; });
 
 window.addEventListener('hashchange', () => { selected = decodeURIComponent(location.hash.slice(1)) || null; render(); });
 listen();

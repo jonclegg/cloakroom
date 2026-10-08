@@ -127,8 +127,9 @@ carry on** on one that needs them, **Show it live** for a tab that is in the bac
 **Close** a session. It updates live from the event stream. While a session works, its message
 shows what the current step is doing (looking at the page, thinking, or the action it chose),
 the model's reason, and how long it has taken; each finished step keeps its reason and the
-model's reasoning text. **Devices** lists the browsers signed in, and signs one or all of
-them out.
+model's reasoning text. **Password & devices** changes the console password (it asks for
+the current one, and signs out every other device), lists the browsers signed in, and signs
+one or all of them out. Saving the setup page or a password link opens the console, signed in.
 
 The console asks for the console password. Signing in keeps that browser signed in for 30
 days, but only on this link: every new share has a new address, and the cookie does not go
