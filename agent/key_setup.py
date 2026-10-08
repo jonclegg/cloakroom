@@ -131,10 +131,10 @@ PAGE = """<!doctype html>
 <title>Cloakroom setup</title>
 <style>
   :root {{ --bg: #f6f5f2; --card: #fff; --ink: #1d1d1b; --muted: #6b6a66; --line: #dddbd5;
-          --accent: #2f5d50; --good: #2f6b3a; --bad: #9a2f2f; }}
+          --accent: #2f5d50; --good: #2f6b3a; --fair: #9a6b12; --bad: #9a2f2f; }}
   @media (prefers-color-scheme: dark) {{
     :root {{ --bg: #171716; --card: #222220; --ink: #ecebe6; --muted: #a3a29c; --line: #3a3936;
-            --accent: #8cc2ae; --good: #8fcf98; --bad: #ec8f8f; }}
+            --accent: #8cc2ae; --good: #8fcf98; --fair: #d6a84a; --bad: #ec8f8f; }}
   }}
   * {{ box-sizing: border-box; }}
   body {{ margin: 0; background: var(--bg); color: var(--ink);
@@ -151,8 +151,20 @@ PAGE = """<!doctype html>
   button:disabled {{ opacity: .45; cursor: default; }}
   h2 {{ font-size: 1.05rem; margin: 26px 0 4px; padding-top: 20px; border-top: 1px solid var(--line); }}
   .hint {{ font-size: 13px; margin: 6px 0 0; }}
-  .meter {{ height: 6px; margin-top: 8px; border-radius: 3px; background: var(--line); overflow: hidden; }}
-  .meter span {{ display: block; height: 100%; width: 0; transition: width .15s; }}
+  .hint.before {{ margin: -2px 0 8px; }}
+  .field {{ position: relative; }}
+  .field input {{ padding-right: 68px; }}
+  .field .show {{ position: absolute; right: 6px; top: 50%; transform: translateY(-50%); margin: 0; padding: 4px 10px;
+                 font-size: 14px; color: var(--accent); background: none; border-radius: 4px; }}
+  .field .show:hover {{ background: color-mix(in srgb, var(--accent) 12%, transparent); }}
+  .field .tick {{ position: absolute; right: 14px; top: 50%; transform: translateY(-50%); color: var(--good);
+                 font-weight: 700; visibility: hidden; }}
+  .field .tick.on {{ visibility: visible; }}
+  .strength {{ display: flex; align-items: center; gap: 10px; margin-top: 8px; min-height: 20px; }}
+  .segments {{ flex: 1; display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }}
+  .segments i {{ height: 4px; border-radius: 2px; background: var(--line); transition: background .15s; }}
+  .verdict {{ font-size: 13px; font-weight: 600; min-width: 6.5em; text-align: right; }}
+  .advice {{ margin-top: 2px; }}
   .good {{ color: var(--good); }} .bad {{ color: var(--bad); }}
   a {{ color: var(--accent); }}
 </style></head>

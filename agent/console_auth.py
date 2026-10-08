@@ -198,16 +198,25 @@ class Devices:
 
 
 FIELDS = """<label for="password">{label}</label>
-<input id="password" name="password" type="password" autocomplete="new-password" {required}>
-<div class="meter" aria-hidden="true"><span id="meter-bar"></span></div>
-<p class="hint" id="meter-words" aria-live="polite">{hint}</p>
-<label for="again">Type it again</label>
-<input id="again" name="again" type="password" autocomplete="new-password" {required}>
-<p class="hint" id="match" aria-live="polite"></p>
+<p class="hint before" id="password-hint">{hint}</p>
+<div class="field">
+  <input id="password" name="password" type="password" autocomplete="new-password"
+         aria-describedby="password-hint password-verdict password-advice" {required}>
+  <button class="show" type="button" aria-controls="password again" aria-pressed="false">Show</button>
+</div>
+<div class="strength"><div class="segments" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+  <span class="verdict" id="password-verdict" aria-live="polite"></span></div>
+<p class="hint advice" id="password-advice"></p>
+<label for="again">Confirm password</label>
+<div class="field">
+  <input id="again" name="again" type="password" autocomplete="new-password" aria-describedby="again-error" {required}>
+  <span class="tick" aria-hidden="true">✓</span>
+</div>
+<p class="hint bad" id="again-error" aria-live="polite"></p>
 <script>
 (() => {{
   const MIN_LENGTH = {min_length}, MIN_STRENGTH = {min_strength}, GUESSABLE = {guessable};
-  const COLORS = ['var(--bad)', 'var(--bad)', '#b8860b', 'var(--good)', 'var(--good)'];
+  const COLORS = ['var(--bad)', 'var(--bad)', 'var(--fair)', 'var(--good)', 'var(--good)'];
   // The same rules as console_auth.strength().
   function strength(password) {{
     const chars = [...password], lowered = password.toLowerCase();
@@ -222,23 +231,37 @@ FIELDS = """<label for="password">{label}</label>
     return [4, 'Very strong'];
   }}
   const password = document.getElementById('password'), again = document.getElementById('again');
-  const bar = document.getElementById('meter-bar'), words = document.getElementById('meter-words');
-  const match = document.getElementById('match'), hint = words.textContent;
+  const segments = document.querySelectorAll('.segments i'), verdict = document.getElementById('password-verdict');
+  const advice = document.getElementById('password-advice'), tick = document.querySelector('.tick');
+  const error = document.getElementById('again-error'), show = document.querySelector('.show');
+  // "Doesn't match" waits until the second box has been left once.
+  let left = false;
   function update() {{
     const empty = !password.value && !again.value && !password.required;
     const [score, text] = strength(password.value);
-    bar.style.width = password.value ? `${{(score + 1) * 20}}%` : '0';
-    bar.style.background = COLORS[score];
-    words.textContent = password.value ? `Strength: ${{text}}` : hint;
-    words.className = 'hint' + (password.value && score < MIN_STRENGTH ? ' bad' : '');
+    const [words, tip = ''] = password.value ? text.split(': ') : ['', ''];
+    const filled = password.value ? Math.max(score, 1) : 0;
+    segments.forEach((segment, index) => segment.style.background = index < filled ? COLORS[score] : '');
+    verdict.textContent = words;
+    verdict.style.color = COLORS[score];
+    advice.textContent = tip && tip[0].toUpperCase() + tip.slice(1);
     const same = password.value === again.value;
-    match.textContent = !again.value ? '' : same ? '✓ The passwords match' : 'The passwords don’t match yet';
-    match.className = 'hint ' + (same ? 'good' : 'bad');
+    tick.classList.toggle('on', !!again.value && same);
+    const wrong = left && !!again.value && !same;
+    error.textContent = wrong ? 'Doesn’t match the password above' : '';
+    again.setAttribute('aria-invalid', wrong);
     // Looked up here: this script runs before the form's button is parsed.
     password.form.querySelector('button[type=submit]').disabled = !empty && (score < MIN_STRENGTH || !same);
   }}
+  show.addEventListener('click', () => {{
+    const hidden = password.type === 'password';
+    password.type = again.type = hidden ? 'text' : 'password';
+    show.textContent = hidden ? 'Hide' : 'Show';
+    show.setAttribute('aria-pressed', hidden);
+  }});
   password.addEventListener('input', update);
   again.addEventListener('input', update);
+  again.addEventListener('blur', () => {{ left = true; update(); }});
   document.addEventListener('DOMContentLoaded', update);
 }})();
 </script>"""
