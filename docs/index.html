@@ -304,7 +304,7 @@
     <h2>Port 9222 is full control of a signed-in browser. Treat it that way.</h2>
     <div class="grid g2">
       <div class="card good"><div class="tag">Localhost only</div><h3>Nothing listens on your network</h3><p>Docker publishes CDP (<code>9222</code>) and the viewer (<code>6080</code>) on <code>127.0.0.1</code> only. Cloakroom never tunnels, forwards or Funnels the CDP port, and the docs tell agents never to.</p></div>
-      <div class="card good"><div class="tag">One way in</div><h3><code>cloakroom share</code> exposes the viewer, not CDP</h3><p>It opens a Cloudflare quick tunnel to the viewer and gives you an HTTPS link. Treat it as a capability: whoever has the link can drive your logged-in browser. <code>cloakroom unshare</code> closes it.</p></div>
+      <div class="card good"><div class="tag">One way in</div><h3><code>cloakroom share</code> exposes the viewer, not CDP</h3><p>It opens a Cloudflare quick tunnel to the console and gives you an HTTPS link. The console asks for the password you chose at setup, and remembers a device for 30 days. <code>cloakroom unshare</code> closes it.</p></div>
     </div>
   </section>
 

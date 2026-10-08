@@ -18,9 +18,9 @@ Usage: cloakroom <command> [--json]
   start          Start the stealth browser.
   stop           Stop it (the profile is kept).
   status         Is it ready, and the viewer, CDP, and share URLs.
-  share          Private HTTPS link to the console: every session and the
-                 live browser. No confirmation.
-  unshare        Stop that link.
+  share          HTTPS link to the console: every session and the live
+                 browser, behind the console password. No confirmation.
+  unshare        Stop that link, and sign out the devices that used it.
   chat "<msg>"   Talk to Cloakroom; it works the browser with DeepSeek and
                  replies. --session <id> continues the same tab and conversation.
   run <id>       A run's steps, reply, and saved files.
@@ -30,10 +30,13 @@ Usage: cloakroom <command> [--json]
                  then wait until it is saved, rejected, or the link expires.
                  --in-browser opens it in Cloakroom's browser, for the viewer.
                  --json prints the link and returns at once.
+  password       One-time link to set or reset the console password, then
+                 wait until it is saved. --share makes the link work from
+                 anywhere (through the share); --json returns at once.
   smoke [sites]  Reach a few big sites from Bing and open a report with
                  screenshots (default: amazon walmart target bestbuy).
 
-chat, run, cancel, notes, key, smoke, share and unshare run inside the container, so from any
+chat, run, cancel, notes, key, password, smoke, share and unshare run inside the container, so from any
 shell (PowerShell too) they also work as: docker exec cloakroom cloakroom <command>
 EOF
   exit 2
@@ -48,16 +51,19 @@ status() {
   share_url="$(active_share_url)"
   openrouter_key=false
   [ -s "${DATA_DIR}/openrouter.key" ] && openrouter_key=true
+  console_password=false
+  [ -s "${DATA_DIR}/console-password" ] && console_password=true
   if [ "${1:-}" = --json ]; then
-    printf '{"docker_running":%s,"container":"%s","ready":%s,"browser":%s,"cdp_url":"%s","viewer_url":"%s","api_url":"%s","openrouter_key":%s,"share_url":%s}\n' \
+    printf '{"docker_running":%s,"container":"%s","ready":%s,"browser":%s,"cdp_url":"%s","viewer_url":"%s","api_url":"%s","openrouter_key":%s,"console_password":%s,"share_url":%s}\n' \
       "$docker_running" "$container" "$([ "$container" = healthy ] && echo true || echo false)" \
       "$([ -n "$browser" ] && echo "\"$browser\"" || echo null)" "$CDP_URL" "$VIEWER_URL" "$API_URL" "$openrouter_key" \
-      "$([ -n "$share_url" ] && echo "\"$share_url\"" || echo null)"
+      "$console_password" "$([ -n "$share_url" ] && echo "\"$share_url\"" || echo null)"
     return 0
   else
-    printf 'Docker running:    %s\nContainer:         %s\nBrowser:           %s\nViewer:            %s\nShare:             %s\nCDP:               %s\nChat API:          %s\nOpenRouter key:    %s\n' \
+    printf 'Docker running:    %s\nContainer:         %s\nBrowser:           %s\nViewer:            %s\nShare:             %s\nCDP:               %s\nChat API:          %s\nOpenRouter key:    %s\nConsole password:  %s\n' \
       "$docker_running" "$container" "${browser:--}" "$VIEWER_URL" "${share_url:--}" "$CDP_URL" "$API_URL" \
-      "$([ "$openrouter_key" = true ] && echo set || echo "missing (run: cloakroom key)")"
+      "$([ "$openrouter_key" = true ] && echo set || echo "missing (run: cloakroom key)")" \
+      "$([ "$console_password" = true ] && echo set || echo "missing (run: cloakroom password)")"
   fi
   [ "$container" = healthy ]
 }
@@ -92,7 +98,7 @@ case "$command" in
   unshare)
     if [ "$(health)" != healthy ]; then
       # The tunnel runs in the container, so it stopped with it.
-      [ "${1:-}" = --json ] && echo '{"event":"share_stopped","stopped":false}' || echo "No remote viewer is running."
+      [ "${1:-}" = --json ] && echo '{"event":"share_stopped","stopped":false}' || echo "Nothing is being shared."
       exit 0
     fi
     exec docker exec cloakroom cloakroom unshare "$@"
@@ -108,6 +114,20 @@ case "$command" in
       printf '%s\n' "$line"
       case "$line" in
         "Paste the OpenRouter key into: "*) open_on_host "${line#Paste the OpenRouter key into: }" || true ;;
+      esac
+    done
+    exit "${PIPESTATUS[0]}"
+    ;;
+  password)
+    require_running
+    case " $* " in
+      *" --json "*|*" --share "*) exec docker exec cloakroom cloakroom password "$@" ;;
+    esac
+    # A local link: open it on this computer, then report when it is saved.
+    docker exec cloakroom cloakroom password "$@" | while IFS= read -r line; do
+      printf '%s\n' "$line"
+      case "$line" in
+        "Set the console password at: "*) open_on_host "${line#Set the console password at: }" || true ;;
       esac
     done
     exit "${PIPESTATUS[0]}"

@@ -34,7 +34,7 @@ Ask your agent to share a link to the Cloakroom console: every session it is run
 ## Good to know
 
 - **Sign in yourself.** When a site needs a password, Cloakroom stops and your agent sends you a private link to the browser, so you can sign in from your phone or any computer. Don't paste passwords into the chat. Your agent can type in texted sign-in codes for you.
-- **It runs on your computer.** Traffic leaves from your own internet connection, and nothing is reachable from outside unless you share the console link. Anyone who has that link can control your logged-in browser, so keep it private.
+- **It runs on your computer.** Traffic leaves from your own internet connection, and nothing is reachable from outside unless you share the console link, and the console asks for a password you choose when you set Cloakroom up.
 - **The details** for agents and the curious are in [AGENTS.md](AGENTS.md) and [the agent guide](skills/cloakroom/SKILL.md). The browser is [CloakBrowser](https://github.com/CloakHQ/CloakBrowser), run from [this fork](https://github.com/jonclegg/CloakBrowser/tree/cloakroom-fixes).
 
 ## License

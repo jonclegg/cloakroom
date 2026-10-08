@@ -1,15 +1,20 @@
-"""The OpenRouter key: a local page where the user pastes it, so it never goes
-through an agent's chat.
+"""Setup: pages where the user types the OpenRouter key and the console password,
+so neither goes through an agent's chat.
 
 `cloakroom key` asks the API for a one-time link (`/setup?code=...`, 15 minutes).
 The user opens it in their own browser, or in Cloakroom's browser through the
-viewer when they are away from the machine, and pastes the key. Cloakroom checks
-it with OpenRouter and writes <data>/openrouter.key, mode 600. The model reads
-that file on every call, so nothing restarts.
+viewer when they are away from the machine, pastes the key and chooses the
+console password. Cloakroom checks the key with OpenRouter and writes
+<data>/openrouter.key, mode 600. The model reads that file on every call, so
+nothing restarts. Once a password is set, the page can leave it as it is.
 
 The page takes no bearer token (the user has none), so it is guarded instead:
 the one-time code, and a Host header that must be localhost, which stops another
 website in the user's browser from swapping in a key of its own.
+
+`cloakroom password` gives a one-time link (`/password?code=...`) to the password
+alone, for an install that has none yet or a user who forgot it. That one works
+through the share too, since the user is often away; the code is what guards it.
 """
 
 from __future__ import annotations
@@ -24,6 +29,7 @@ import urllib.error
 import urllib.request
 
 import cloakroom_agent as agent
+import console_auth
 
 CODE_SECONDS = 15 * 60
 LOCAL_HOSTS = ("127.0.0.1", "localhost")
@@ -142,40 +148,90 @@ PAGE = """<!doctype html>
           border: 1px solid var(--line); border-radius: 6px; }}
   button {{ margin-top: 16px; padding: 10px 18px; font: inherit; font-weight: 600; color: var(--card);
            background: var(--accent); border: 0; border-radius: 6px; cursor: pointer; }}
+  button:disabled {{ opacity: .45; cursor: default; }}
+  h2 {{ font-size: 1.05rem; margin: 26px 0 4px; padding-top: 20px; border-top: 1px solid var(--line); }}
+  .hint {{ font-size: 13px; margin: 6px 0 0; }}
+  .meter {{ height: 6px; margin-top: 8px; border-radius: 3px; background: var(--line); overflow: hidden; }}
+  .meter span {{ display: block; height: 100%; width: 0; transition: width .15s; }}
   .good {{ color: var(--good); }} .bad {{ color: var(--bad); }}
   a {{ color: var(--accent); }}
 </style></head>
 <body><main><div class="card">{body}</div></main></body></html>"""
 
-FORM = """<h1>Cloakroom needs an OpenRouter key</h1>
-<p>Cloakroom drives the browser with DeepSeek through OpenRouter. The key stays on this
-machine, in <code>~/.cloakroom/data/openrouter.key</code>; your agent never sees it.</p>
-<p>Create one at <a href="https://openrouter.ai/keys" target="_blank" rel="noopener">openrouter.ai/keys</a>.</p>
+FORM = """<h1>Set up Cloakroom</h1>
+<p>Two things, both kept on this machine. Your agent never sees either one.</p>
 {message}
 <form method="post" action="/setup">
   <input type="hidden" name="code" value="{code}">
+  <input type="text" name="username" value="cloakroom" autocomplete="username" hidden>
   <label for="key">OpenRouter key</label>
   <input id="key" name="key" type="password" autocomplete="off" spellcheck="false"
          placeholder="sk-or-v1-..." required autofocus>
+  <p class="hint">Cloakroom drives the browser with DeepSeek through OpenRouter. It keeps the key in
+  <code>~/.cloakroom/data/openrouter.key</code>. Create one at
+  <a href="https://openrouter.ai/keys" target="_blank" rel="noopener">openrouter.ai/keys</a>.</p>
+  <h2>Console password</h2>
+  <p>You type this when you open a share link, for example on your phone, to watch or take over the
+  browser. Anyone with the link <em>and</em> this password can use your signed-in browser.</p>
+  {password_fields}
   <button type="submit">Check and save</button>
 </form>"""
 
-SAVED = """<h1 class="good">Key saved</h1>
-<p>OpenRouter accepted it. {detail}</p>
+PASSWORD_FORM = """<h1>{title}</h1>
+<p>You type this when you open a share link to the Cloakroom console. Saving it signs out every
+device that is signed in now, and signs in this one.</p>
+{message}
+<form method="post" action="/password">
+  <input type="hidden" name="code" value="{code}">
+  <input type="hidden" name="session" value="{session}">
+  <input type="text" name="username" value="cloakroom" autocomplete="username" hidden>
+  {password_fields}
+  <button type="submit">Save password</button>
+</form>"""
+
+SAVED = """<h1 class="good">Saved</h1>
+<p>OpenRouter accepted the key. {detail}</p>
+<p>{password}</p>
 <p>You can close this page and go back to your agent.</p>"""
 
+PASSWORD_SAVED = """<h1 class="good">Password saved</h1>
+<p>Every other device is signed out. This one is signed in for 30 days.</p>
+<p><a href="{console}">Open the console</a></p>"""
+
 EXPIRED = """<h1>This link has expired</h1>
-<p>Setup links work once and last 15 minutes. Run <code>cloakroom key</code> for a new one.</p>"""
+<p>Setup links work once and last 15 minutes. Ask your agent for a new one
+(<code>{command}</code>).</p>"""
 
 
-def form_page(code, error=None):
+def form_page(code, password_set, error=None):
     message = f'<p class="bad">{html.escape(error)}</p>' if error else ""
-    return PAGE.format(body=FORM.format(message=message, code=html.escape(code)))
+    fields = console_auth.password_fields(
+        "New password" if password_set else "Password",
+        "Leave both empty to keep the password you have." if password_set
+        else f"At least {console_auth.MIN_LENGTH} characters. Your password manager can save it.",
+        required=not password_set)
+    return PAGE.format(body=FORM.format(message=message, code=html.escape(code), password_fields=fields))
 
 
-def saved_page(info):
-    return PAGE.format(body=SAVED.format(detail=html.escape(describe(info))))
+def saved_page(info, password_changed):
+    password = ("The console password is set. Every device that was signed in is signed out." if password_changed
+                else "The console password is as it was.")
+    return PAGE.format(body=SAVED.format(detail=html.escape(describe(info)), password=password))
 
 
-def expired_page():
-    return PAGE.format(body=EXPIRED)
+def password_page(code, session, password_set, error=None):
+    message = f'<p class="bad">{html.escape(error)}</p>' if error else ""
+    fields = console_auth.password_fields(
+        "New password" if password_set else "Password",
+        f"At least {console_auth.MIN_LENGTH} characters. Your password manager can save it.", required=True)
+    return PAGE.format(body=PASSWORD_FORM.format(
+        title="Choose a new console password" if password_set else "Choose a console password",
+        message=message, code=html.escape(code), session=html.escape(session), password_fields=fields))
+
+
+def password_saved_page(console):
+    return PAGE.format(body=PASSWORD_SAVED.format(console=html.escape(console)))
+
+
+def expired_page(command):
+    return PAGE.format(body=EXPIRED.format(command=html.escape(command)))

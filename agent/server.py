@@ -16,9 +16,15 @@
     GET  /v1/sessions/{session}
     POST /v1/sessions/{session}/focus  bring its tab to the front, so the live view shows it
     POST /v1/sessions/{session}/close  close its tab and forget it
-    POST /v1/share                   a private HTTPS link to the console (a Cloudflare quick tunnel)
-    POST /v1/unshare                 stop it; the link and its console key stop working
-    GET  /console                    the web console: ?key= from the share link sets its cookie
+    POST /v1/share                   an HTTPS link to the console (a Cloudflare quick tunnel)
+    POST /v1/unshare                 stop it; the devices signed in through it are signed out
+    POST /v1/password-link           {"share": false}: a one-time link to set the console password
+    GET  /v1/devices                 browsers signed in to the console
+    POST /v1/devices/{device}/sign-out
+    POST /v1/devices/sign-out-everywhere
+    GET  /console                    the web console, or its sign-in page
+    POST /console/sign-in            the console password -> a device cookie for 30 days
+    GET  /password?code=             set the console password (one-time link; works through the share)
     GET  /viewer/...                 the live browser (noVNC), for the console
     GET  /v1/status
     GET  /v1/events                  Server-Sent Events: every state change, in order.
@@ -29,8 +35,9 @@
     GET  /v1/health                  no token; for the container health check
 
 Every route but /v1/health needs `Authorization: Bearer <token>`; the token is
-<data>/api-token, created on first start. The console instead carries a cookie
-holding the console key, which only the share link gives out. A session is one browser tab and the
+<data>/api-token, created on first start. The console instead carries a device
+cookie, which signing in with the console password gives out (console_auth). A
+session is one browser tab and the
 conversation in it. One browser has one mouse, so runs go through a single worker
 thread, which is also the only thread that touches Playwright.
 
@@ -41,7 +48,8 @@ instead of polling.
 
 A run that ends `needs_user` (a sign-in, a payment, a check only the user can
 clear) starts the share itself, and carries a console link to that session under
-`needs_user`, so the user can finish the step from any machine and carry on.
+`needs_user`, so the user can finish the step from any machine and carry on. With
+no console password yet, that link sets one first.
 """
 
 from __future__ import annotations
@@ -71,6 +79,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
 import cloakroom_agent as agent  # noqa: E402
+import console_auth  # noqa: E402
 import key_setup  # noqa: E402
 import smoke  # noqa: E402
 from notebook import Notebook  # noqa: E402
@@ -83,6 +92,8 @@ CDP_URL = os.environ.get("CDP_URL", "http://127.0.0.1:9222")
 VIEWER_PORT = 6080
 CONSOLE_PAGE = os.path.join(HERE, "console.html")
 CONSOLE_COOKIE = "cloakroom_console"
+PASSWORD_FILE = os.path.join(DATA_DIR, "console-password")
+DEVICES_FILE = os.path.join(DATA_DIR, "console-devices.json")
 SESSION_ID = re.compile(r"^s_[A-Za-z0-9_-]+$")
 SHARE_FILE = os.path.join(DATA_DIR, "share.json")
 SHARE_URL_SECONDS = 60
@@ -166,36 +177,27 @@ def step_event(run, step):
 class Share:
     """The Cloudflare quick tunnel to the console: one at a time, reused until stopped.
 
-    The tunnel reaches this API (console, live viewer, routes), never CDP. The
-    link carries the console key; stopping the share makes a new key, so an old
-    link and the cookies it set stop working. The link is written to
-    <data>/share.json so `cloakroom status` on the host can show it.
+    The tunnel reaches this API (console, live viewer, routes), never CDP, and the
+    console asks for the password. Each new tunnel has a new address, and a device
+    cookie belongs to one address, so a share can stay up between hand-offs. The
+    console link is written to <data>/share.json so `cloakroom status` on the host
+    can show it.
     """
 
     def __init__(self, events):
         self.events = events
         self.process = None
         self.url = None
-        self.key = secrets.token_urlsafe(24)
         self.lock = threading.Lock()
         if os.path.exists(SHARE_FILE):
             # Left by a container that stopped; its tunnel died with it.
             os.remove(SHARE_FILE)
 
-    def link(self, reused):
-        return {"url": f"{self.url}/console?key={self.key}",
-                "local_url": f"http://127.0.0.1:{HOST_PORT}/console?key={self.key}", "reused": reused}
-
-    def session_link(self, session_id):
-        return f"{self.url}/console?key={self.key}&session={session_id}"
-
-    def valid_key(self, key):
-        return bool(key) and hmac.compare_digest(key, self.key)
-
     def start(self):
+        """Start the tunnel, or reuse the running one. Returns (its base URL, reused)."""
         with self.lock:
             if self.process is not None and self.process.poll() is None:
-                return self.link(True)
+                return self.url, True
             log_path = os.path.join(DATA_DIR, "share.log")
             with open(log_path, "w") as log:
                 self.process = subprocess.Popen(
@@ -222,31 +224,32 @@ class Share:
                 self.process = None
                 raise RuntimeError(f"cloudflared did not give a share URL:\n{tail}")
             with open(SHARE_FILE, "w") as fh:
-                json.dump(self.link(False), fh)
+                json.dump({"url": f"{self.url}/console"}, fh)
         self.events.publish("share.started", url=self.url)
-        return self.link(False)
+        return self.url, False
 
     def stop(self):
+        """Stop the tunnel. Returns the host it served, or None if none was running."""
         with self.lock:
             if self.process is None or self.process.poll() is not None:
                 self.process = None
-                return False
+                return None
             self.process.terminate()
             try:
                 self.process.wait(5)
             except subprocess.TimeoutExpired:
                 self.process.kill()
             self.process = None
+            host = urlparse(self.url).netloc
             self.url = None
-            self.key = secrets.token_urlsafe(24)
             os.remove(SHARE_FILE)
         self.events.publish("share.stopped")
-        return True
+        return host
 
     def active_url(self):
         with self.lock:
             running = self.process is not None and self.process.poll() is None
-            return f"{self.url}/console?key={self.key}" if running else None
+            return f"{self.url}/console" if running else None
 
 
 class Session:
@@ -397,6 +400,9 @@ class Cloakroom:
         self.front = None
         self.smokes = {}
         self.setup_codes = key_setup.SetupCodes()
+        self.password_codes = key_setup.SetupCodes()
+        self.password = console_auth.Password(PASSWORD_FILE)
+        self.devices = console_auth.Devices(DEVICES_FILE)
 
     # ---- called from HTTP threads
 
@@ -486,6 +492,8 @@ class Cloakroom:
             "queue_depth": self.queue.qsize(),
             "running": self.current.id if self.current else None,
             "share_url": self.share.active_url(),
+            "console_password": self.password.is_set(),
+            "password_setup": self.password_codes.status(),
             "last_event_id": self.events.last_id(),
             "event_readers": self.events.readers,
             "sessions": [
@@ -507,6 +515,38 @@ class Cloakroom:
             url = f"http://127.0.0.1:{HOST_PORT}/setup?code={code}"
         return {"setup_url": url, "in_browser": in_browser, "openrouter_key": self._has_key(),
                 "expires_in_seconds": key_setup.CODE_SECONDS}
+
+    def share_link(self, session_id=None):
+        """Start the share (or reuse it) and give the link to send the user: the console, on
+        `session_id` if given. With no console password yet, a one-time link that sets one first."""
+        base, reused = self.share.start()
+        if self.password.is_set():
+            url = f"{base}/console" + (f"#{session_id}" if session_id else "")
+        else:
+            url = self.password_link(base, session_id)
+        return {"url": url, "local_url": f"http://127.0.0.1:{HOST_PORT}/console", "reused": reused,
+                "console_password": self.password.is_set()}
+
+    def password_link(self, base, session_id=None):
+        """A one-time link to set the console password, on `base` (the share, or localhost)."""
+        code = self.password_codes.issue()
+        self.events.publish("password.issued")
+        return f"{base}/password?code={code}" + (f"&session={session_id}" if session_id else "")
+
+    def unshare(self):
+        host = self.share.stop()
+        if host is not None:
+            self.devices.sign_out(host=host)
+        return host is not None
+
+    def set_password(self, password):
+        self.password.set(password)
+        self.devices.sign_out()
+        self.events.publish("password.set")
+
+    def password_progress(self, code, state, error=None):
+        self.password_codes.note(code, state, error)
+        self.events.publish(f"password.{state}", **({"error": error} if error else {}))
 
     def key_progress(self, code, state, error=None):
         """Record what happened to a setup link, and publish it. Never the key itself."""
@@ -659,8 +699,7 @@ class Cloakroom:
         run.status = status
         run.reply = reply
         if status == "needs_user":
-            self.share.start()
-            run.needs_user = {"task": reply, "share_url": self.share.session_link(session.id)}
+            run.needs_user = {"task": reply, "share_url": self.share_link(session.id)["url"]}
         session.conversation.append({"role": "caller", "text": run.message})
         session.conversation.append({"role": "cloakroom", "text": reply})
 
@@ -686,16 +725,6 @@ def load_token():
         return fh.read().strip()
 
 
-CONSOLE_EXPIRED = """<!doctype html><html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1"><title>Cloakroom</title>
-<style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#0E1014;color:#E8EAEF;
-font:16px/1.5 system-ui,sans-serif;padding:24px;box-sizing:border-box}main{max-width:32rem}
-code{background:#1D212A;padding:2px 6px;border-radius:4px}</style></head>
-<body><main><h1 style="font-size:22px">This console link has expired</h1>
-<p>Console links stop working when sharing stops. Ask your agent for a new one, or run
-<code>cloakroom share</code> on the computer running Cloakroom.</p></main></body></html>"""
-
-
 def make_handler(cloakroom, token):
     class Handler(BaseHTTPRequestHandler):
         server_version = "cloakroom"
@@ -717,36 +746,83 @@ def make_handler(cloakroom, token):
             cookie = SimpleCookie(self.headers.get("Cookie") or "")
             return cookie[CONSOLE_COOKIE].value if CONSOLE_COOKIE in cookie else ""
 
+        def _device(self):
+            return cloakroom.devices.find(self._console_cookie(), self.headers.get("Host"))
+
         def _authorized(self):
             given = self.headers.get("Authorization", "").removeprefix("Bearer ").strip()
-            if hmac.compare_digest(given, token) or cloakroom.share.valid_key(self._console_cookie()):
+            if hmac.compare_digest(given, token):
+                return True
+            # Browsers send Origin on every POST and websocket: a signed-in device's
+            # cookie does nothing for a page on another site.
+            origin = self.headers.get("Origin")
+            if self._device() is not None and (origin is None or urlparse(origin).netloc == self.headers.get("Host")):
                 return True
             self._send(401, {"error": "missing or wrong bearer token (see ~/.cloakroom/data/api-token), "
-                                      "or an expired console link"})
+                                      "or not signed in to the console"})
             return False
 
+        def _form(self):
+            length = int(self.headers.get("Content-Length") or 0)
+            return {name: values[0] for name, values in parse_qs(self.rfile.read(length).decode()).items()}
+
+        def _device_cookie(self):
+            """Sign this browser in as a new device; returns its Set-Cookie value."""
+            device = cloakroom.devices.sign_in(self.headers.get("Host"), self.headers.get("User-Agent"))
+            secure = "; Secure" if self.headers.get("X-Forwarded-Proto") == "https" else ""
+            # Lax, not Strict: a link opened from Messages is a cross-site
+            # navigation, and Strict would leave the cookie off it.
+            return (f"{CONSOLE_COOKIE}={device}; Path=/; HttpOnly; SameSite=Lax; "
+                    f"Max-Age={console_auth.DEVICE_SECONDS}{secure}")
+
         def _console(self):
-            """The console page. The share link's ?key= becomes a cookie, then a clean URL."""
-            query = parse_qs(urlparse(self.path).query)
-            key = (query.get("key") or [""])[0]
-            if key:
-                if not cloakroom.share.valid_key(key):
-                    return self._send_html(401, CONSOLE_EXPIRED)
-                session = (query.get("session") or [""])[0]
-                secure = "; Secure" if self.headers.get("X-Forwarded-Proto") == "https" else ""
-                self.send_response(303)
-                # Lax, not Strict: a link opened from Messages is a cross-site
-                # navigation, and Strict would drop the cookie on the redirect.
-                self.send_header("Set-Cookie", f"{CONSOLE_COOKIE}={key}; Path=/; HttpOnly; SameSite=Lax{secure}")
-                self.send_header("Location", "/console" + (f"#{session}" if SESSION_ID.match(session) else ""))
-                self.send_header("Content-Length", "0")
-                self.send_header("Referrer-Policy", "no-referrer")
-                self.end_headers()
-                return None
-            if not cloakroom.share.valid_key(self._console_cookie()):
-                return self._send_html(401, CONSOLE_EXPIRED)
+            """The console for a signed-in device; otherwise its sign-in page."""
+            if self._device() is None:
+                return self._send_html(401, console_auth.sign_in_page(cloakroom.password.is_set()))
             with open(CONSOLE_PAGE) as fh:
                 return self._send_html(200, fh.read())
+
+        def _sign_in(self):
+            form = self._form()
+            session = form.get("session", "")
+            if not cloakroom.password.is_set():
+                return self._send_html(401, console_auth.sign_in_page(False))
+            try:
+                cloakroom.password.check(form.get("password", ""))
+            except console_auth.SignInRefused as exc:
+                cloakroom.events.publish("console.sign_in_refused")
+                return self._send_html(401, console_auth.sign_in_page(True, str(exc), session))
+            self.send_response(303)
+            self.send_header("Set-Cookie", self._device_cookie())
+            self.send_header("Location", "/console" + (f"#{session}" if SESSION_ID.match(session) else ""))
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            cloakroom.events.publish("console.signed_in")
+            return None
+
+        def _password(self, method):
+            """Set the console password from a one-time link. Not localhost-only, unlike /setup:
+            the user is often away, so this link goes through the share; its code guards it."""
+            form = parse_qs(urlparse(self.path).query) if method == "GET" else None
+            form = {name: values[0] for name, values in form.items()} if form is not None else self._form()
+            code, session = form.get("code", ""), form.get("session", "")
+            if not cloakroom.password_codes.valid(code):
+                return self._send_html(410, key_setup.expired_page("cloakroom password"))
+            if method == "GET":
+                cloakroom.password_progress(code, "opened")
+                return self._send_html(200, key_setup.password_page(code, session, cloakroom.password.is_set()))
+            password = form.get("password", "")
+            try:
+                console_auth.check_new(password, form.get("again", ""))
+            except ValueError as exc:
+                cloakroom.password_progress(code, "rejected", str(exc))
+                return self._send_html(400, key_setup.password_page(code, session, cloakroom.password.is_set(),
+                                                                    str(exc)))
+            cloakroom.set_password(password)
+            cloakroom.password_progress(code, "saved")
+            cloakroom.password_codes.consume(code)
+            console = "/console" + (f"#{session}" if SESSION_ID.match(session) else "")
+            return self._send_html(200, key_setup.password_saved_page(console), self._device_cookie())
 
         def _proxy_viewer(self):
             """Pass /viewer/... through to noVNC: its files, and its websocket byte for byte.
@@ -799,9 +875,11 @@ def make_handler(cloakroom, token):
                 pump.join(5)
             return None
 
-        def _send_html(self, code, page):
+        def _send_html(self, code, page, cookie=None):
             body = page.encode()
             self.send_response(code)
+            if cookie:
+                self.send_header("Set-Cookie", cookie)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
             self.send_header("Cache-Control", "no-store, private")
@@ -812,28 +890,35 @@ def make_handler(cloakroom, token):
         def _setup(self, method):
             if not key_setup.local_host(self.headers.get("Host")):
                 return self._send(403, {"error": "the setup page only answers on localhost"})
+            password_set = cloakroom.password.is_set()
             if method == "GET":
                 code = (parse_qs(urlparse(self.path).query).get("code") or [""])[0]
                 if not cloakroom.setup_codes.valid(code):
-                    return self._send_html(410, key_setup.expired_page())
+                    return self._send_html(410, key_setup.expired_page("cloakroom key"))
                 cloakroom.key_progress(code, "opened")
-                return self._send_html(200, key_setup.form_page(code))
-            length = int(self.headers.get("Content-Length") or 0)
-            form = parse_qs(self.rfile.read(length).decode())
-            code = (form.get("code") or [""])[0]
-            key = (form.get("key") or [""])[0].strip()
+                return self._send_html(200, key_setup.form_page(code, password_set))
+            form = self._form()
+            code = form.get("code", "")
+            key = form.get("key", "").strip()
+            password, again = form.get("password", ""), form.get("again", "")
             if not cloakroom.setup_codes.valid(code):
-                return self._send_html(410, key_setup.expired_page())
+                return self._send_html(410, key_setup.expired_page("cloakroom key"))
+            # Both fields empty keeps the password there is; with none yet, it is required.
+            new_password = bool(password or again) or not password_set
             try:
+                if new_password:
+                    console_auth.check_new(password, again)
                 info = key_setup.check_key(key)
             except ValueError as exc:
                 cloakroom.key_progress(code, "rejected", str(exc))
-                return self._send_html(400, key_setup.form_page(code, str(exc)))
+                return self._send_html(400, key_setup.form_page(code, password_set, str(exc)))
             key_setup.save_key(key)
+            if new_password:
+                cloakroom.set_password(password)
             cloakroom.key_progress(code, "saved")
             cloakroom.setup_codes.consume(code)
             print("openrouter key saved", flush=True)
-            return self._send_html(200, key_setup.saved_page(info))
+            return self._send_html(200, key_setup.saved_page(info, new_password))
 
         def _parts(self):
             return [unquote(part) for part in self.path.split("?")[0].strip("/").split("/")]
@@ -856,12 +941,22 @@ def make_handler(cloakroom, token):
                 return None
             if parts == ["console"]:
                 return self._console()
+            if parts == ["console", "sign-in"]:
+                self.send_response(303)
+                self.send_header("Location", "/console")
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return None
+            if parts == ["password"]:
+                return self._password("GET")
             if not self._authorized():
                 return None
             if parts[0] == "viewer":
                 return self._proxy_viewer()
             if parts == ["v1", "status"]:
                 return self._send(200, cloakroom.status())
+            if parts == ["v1", "devices"]:
+                return self._send(200, {"devices": cloakroom.devices.view(self._device())})
             if parts == ["v1", "sessions"]:
                 return self._send(200, {"sessions": cloakroom.sessions_view()})
             if len(parts) == 3 and parts[:2] == ["v1", "sessions"]:
@@ -997,6 +1092,10 @@ def make_handler(cloakroom, token):
             parts = self._parts()
             if parts == ["setup"]:
                 return self._setup("POST")
+            if parts == ["console", "sign-in"]:
+                return self._sign_in()
+            if parts == ["password"]:
+                return self._password("POST")
             if not self._authorized():
                 return None
             if parts == ["v1", "setup-link"]:
@@ -1004,11 +1103,27 @@ def make_handler(cloakroom, token):
                 return self._send(200, cloakroom.setup_link(bool(body.get("in_browser"))))
             if parts == ["v1", "share"]:
                 try:
-                    return self._send(200, cloakroom.share.start())
+                    return self._send(200, cloakroom.share_link())
                 except RuntimeError as exc:
                     return self._send(502, {"error": str(exc)})
             if parts == ["v1", "unshare"]:
-                return self._send(200, {"stopped": cloakroom.share.stop()})
+                return self._send(200, {"stopped": cloakroom.unshare()})
+            if parts == ["v1", "password-link"]:
+                shared = bool(self._json_body().get("share"))
+                try:
+                    base = cloakroom.share.start()[0] if shared else f"http://127.0.0.1:{HOST_PORT}"
+                except RuntimeError as exc:
+                    return self._send(502, {"error": str(exc)})
+                return self._send(200, {"password_url": cloakroom.password_link(base), "shared": shared,
+                                        "console_password": cloakroom.password.is_set(),
+                                        "expires_in_seconds": key_setup.CODE_SECONDS})
+            if parts == ["v1", "devices", "sign-out-everywhere"]:
+                return self._send(200, {"signed_out": cloakroom.devices.sign_out()})
+            if len(parts) == 4 and parts[:2] == ["v1", "devices"] and parts[3] == "sign-out":
+                signed_out = cloakroom.devices.sign_out(device_id=parts[2])
+                if not signed_out:
+                    return self._send(404, {"error": f"no device {parts[2]}"})
+                return self._send(200, {"signed_out": signed_out})
             if parts == ["v1", "smoke"]:
                 body = self._json_body()
                 sites = body.get("sites") or []

@@ -120,6 +120,19 @@ details.steps .did { display: block; font: 12px var(--mono); color: var(--muted)
 .compose .row { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; }
 .welcome { padding: 48px 24px; max-width: 34rem; color: var(--soft); }
 .welcome h1 { font-size: 22px; color: var(--ink); margin: 0 0 8px; }
+.top .devices-button { margin-left: auto; min-height: 34px; }
+dialog { width: min(30rem, calc(100vw - 32px)); padding: 0; border-radius: 12px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); }
+dialog::backdrop { background: rgba(0,0,0,.6); }
+dialog .dialog-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 14px 18px; border-bottom: 1px solid var(--line); }
+dialog h2 { margin: 0; font-size: 16px; }
+dialog .body { padding: 14px 18px 18px; }
+dialog .body > p { margin: 0 0 8px; color: var(--muted); font-size: 13px; }
+.device { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-top: 1px solid var(--line-soft); }
+.device .what { flex: 1; min-width: 0; }
+.device .what b { display: block; }
+.device .what span { color: var(--muted); font-size: 13px; }
+.device .tag { font-size: 12px; color: var(--ok-ink); white-space: nowrap; }
+.btn.danger { color: var(--bad); background: transparent; margin-top: 12px; }
 .error { margin: 12px 20px 0; padding: 10px 14px; border-radius: 8px; background: #2A1414; color: var(--bad); border: 1px solid #5A2626; font-size: 13px; }
 
 @media (max-width: 600px) {
@@ -141,7 +154,20 @@ details.steps .did { display: block; font: 12px var(--mono); color: var(--muted)
     <span data-testid="browser-state"><span class="dot" id="browser-dot"></span><span id="browser-text">Connecting…</span></span>
     <span data-testid="events-state"><span class="dot" id="events-dot"></span><span id="events-text">Live updates off</span></span>
   </div>
+  <button class="btn quiet devices-button" type="button" id="devices-open" data-testid="devices-open">Devices</button>
 </header>
+
+<dialog id="devices" aria-labelledby="devices-title" data-testid="devices">
+  <div class="dialog-head">
+    <h2 id="devices-title">Signed-in devices</h2>
+    <button class="btn quiet" type="button" id="devices-close">Close</button>
+  </div>
+  <div class="body">
+    <p>Each one stays signed in for 30 days on this share link. A new console password, or stopping the share, signs them out.</p>
+    <div id="device-list" data-testid="device-list"></div>
+    <button class="btn danger" type="button" id="sign-out-everywhere" data-testid="sign-out-everywhere">Sign out everywhere</button>
+  </div>
+</dialog>
 
 <div class="app">
   <nav class="list" aria-label="Sessions">
@@ -182,7 +208,7 @@ details.steps .did { display: block; font: 12px var(--mono); color: var(--muted)
           </div>
         </div>
         <div class="phone" id="s-phone" hidden>
-          <span>On your phone instead? Open</span>
+          <span>On your phone instead? Open (it asks for the console password)</span>
           <span class="link" id="s-link" data-testid="share-link"></span>
           <button class="btn" type="button" data-act="copy" data-testid="copy-link">Copy link</button>
         </div>
@@ -245,7 +271,7 @@ async function api(method, path, body) {
     body: body ? JSON.stringify(body) : undefined,
   });
   const data = await response.json().catch(() => ({}));
-  if (response.status === 401) { location.reload(); throw new Error('This console link has expired.'); }
+  if (response.status === 401) { location.reload(); throw new Error('Signed out of the console.'); }
   if (!response.ok) throw new Error(data.error || `${response.status} ${response.statusText}`);
   return data;
 }
@@ -530,6 +556,44 @@ $('new-form').addEventListener('submit', async (event) => {
     selected = run.session;
     await refresh();
   } catch (error) { selected = null; render(); showError(error); }
+});
+
+// ------------------------------------------------------------- devices
+const shortDate = (iso) => new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+
+async function showDevices() {
+  const { devices } = await api('GET', '/v1/devices');
+  $('device-list').replaceChildren(...devices.map((d) => {
+    const row = document.createElement('div');
+    row.className = 'device';
+    row.dataset.testid = 'device';
+    const what = document.createElement('div'); what.className = 'what';
+    const label = document.createElement('b'); label.textContent = d.label;
+    const when = document.createElement('span'); when.textContent = `Signed in ${shortDate(d.signed_in)} · until ${shortDate(d.expires)}`;
+    what.append(label, when);
+    row.append(what);
+    if (d.current) { const tag = document.createElement('span'); tag.className = 'tag'; tag.textContent = 'This device'; row.append(tag); }
+    const out = document.createElement('button');
+    out.type = 'button'; out.className = 'btn'; out.textContent = 'Sign out'; out.dataset.device = d.device;
+    row.append(out);
+    return row;
+  }));
+  if (!$('devices').open) $('devices').showModal();
+}
+
+$('devices-open').addEventListener('click', () => showDevices().catch(showError));
+$('devices-close').addEventListener('click', () => $('devices').close());
+$('device-list').addEventListener('click', async (event) => {
+  const button = event.target.closest('[data-device]');
+  if (!button) return;
+  button.disabled = true;
+  // Signing out this device makes the next call a 401, which reloads to the sign-in page.
+  try { await api('POST', `/v1/devices/${button.dataset.device}/sign-out`); await showDevices(); }
+  catch (error) { $('devices').close(); showError(error); }
+});
+$('sign-out-everywhere').addEventListener('click', async () => {
+  await api('POST', '/v1/devices/sign-out-everywhere').catch(showError);
+  location.reload();
 });
 
 window.addEventListener('hashchange', () => { selected = decodeURIComponent(location.hash.slice(1)) || null; render(); });

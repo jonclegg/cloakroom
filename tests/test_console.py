@@ -8,8 +8,11 @@ several minutes.
     pip install pytest playwright && playwright install chromium
     pytest tests/test_console.py
 
-Cloakroom must be running with an OpenRouter key. The tests start a share
-(`cloakroom share --json`), and the last one stops and restarts it.
+Cloakroom must be running with an OpenRouter key and a console password, and
+CLOAKROOM_CONSOLE_PASSWORD must hold that password. The tests sign in with it
+(one wrong try too, never enough to lock sign-in) and sign out only the devices
+they signed in. They start a share (`cloakroom share --json`), and the last one
+stops and restarts it, which signs out the devices that used the old link.
 
 Every trycloudflare.com name is served from the same Cloudflare addresses, so the
 test browser resolves them through public DNS: a resolver that was asked about a
@@ -31,6 +34,7 @@ from playwright.sync_api import expect, sync_playwright
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RUN_SECONDS = 240
 RUN_TIMEOUT = RUN_SECONDS * 1000
+PASSWORD = os.environ.get("CLOAKROOM_CONSOLE_PASSWORD", "")
 
 
 def cloakroom(*args):
@@ -41,6 +45,14 @@ def cloakroom(*args):
 def share_link():
     lines = [line for line in cloakroom("share", "--json").splitlines() if line.startswith("{")]
     return json.loads(lines[-1])["url"]
+
+
+def sign_in(page, url):
+    """Open a console link and sign in; the page ends on the console, live."""
+    page.goto(url)
+    page.get_by_label("Console password").fill(PASSWORD)
+    page.get_by_role("button", name="Sign in").click()
+    expect(page.get_by_test_id("events-state")).to_have_text("Live updates on", timeout=30000)
 
 
 def cloudflare_address():
@@ -67,6 +79,12 @@ def wait_reachable(browser, url):
         context.close()
 
 
+@pytest.fixture(scope="module", autouse=True)
+def console_password():
+    if not PASSWORD:
+        pytest.fail("Set CLOAKROOM_CONSOLE_PASSWORD to this install's console password.")
+
+
 @pytest.fixture(scope="module")
 def browser():
     with sync_playwright() as playwright:
@@ -82,7 +100,7 @@ def link(browser):
     wait_reachable(browser, url)
     # After a restart the browser can take minutes to come up; the tests time runs, not that.
     context = browser.new_context()
-    context.new_page().goto(url)
+    sign_in(context.new_page(), url)
     deadline = time.time() + 300
     while not context.request.get(url.split("/console")[0] + "/v1/status").json()["browser_connected"]:
         assert time.time() < deadline, "the browser never connected"
@@ -95,8 +113,7 @@ def link(browser):
 def page(browser, link):
     context = browser.new_context(viewport={"width": 1440, "height": 1000})
     page = context.new_page()
-    page.goto(link)
-    expect(page.get_by_test_id("events-state")).to_have_text("Live updates on", timeout=30000)
+    sign_in(page, link)
     base = link.split("/console")[0]
     before = {s["session"] for s in context.request.get(base + "/v1/sessions").json()["sessions"]}
     yield page
@@ -140,23 +157,57 @@ def step_count(page):
 # ---------------------------------------------------------------- the link
 
 
-def test_link_sets_a_cookie_and_an_expired_link_says_so(browser, link):
+def test_the_console_asks_for_the_password_and_keeps_the_device_30_days(browser, link):
     base = link.split("/console")[0]
     context = browser.new_context()
     page = context.new_page()
 
-    page.goto(base + "/console")
-    expect(page.get_by_role("heading", name="This console link has expired")).to_be_visible()
-    page.goto(base + "/console?key=not-the-key")
-    expect(page.get_by_role("heading", name="This console link has expired")).to_be_visible()
+    page.goto(link)
+    expect(page.get_by_role("heading", name="Sign in to the console")).to_be_visible()
     assert page.request.get(base + "/v1/sessions").status == 401
     assert page.request.get(base + "/viewer/core/rfb.js").status == 401
 
-    page.goto(link)
-    assert page.url == base + "/console", "the key leaves the address bar after the redirect"
-    assert page.request.get(base + "/v1/sessions").status == 200
+    page.get_by_label("Console password").fill(PASSWORD + "-not")
+    page.get_by_role("button", name="Sign in").click()
+    expect(page.get_by_role("alert")).to_contain_text("Wrong password")
+
+    page.get_by_label("Console password").fill(PASSWORD)
+    page.get_by_role("button", name="Sign in").click()
     expect(page.get_by_test_id("events-state")).to_have_text("Live updates on", timeout=30000)
+    assert page.request.get(base + "/v1/sessions").status == 200
+    cookie = next(c for c in context.cookies() if c["name"] == "cloakroom_console")
+    assert cookie["httpOnly"] and cookie["secure"] and cookie["sameSite"] == "Lax"
+    assert abs(cookie["expires"] - time.time() - 30 * 24 * 3600) < 600
+
+    # Another site's page cannot use the cookie.
+    assert page.request.post(base + "/v1/devices/sign-out-everywhere",
+                             headers={"Origin": "https://example.com"}).status == 401
     context.close()
+
+
+def test_signing_out_another_device_sends_it_back_to_sign_in(browser, link):
+    base = link.split("/console")[0]
+    mine = browser.new_context()
+    other = browser.new_context()
+    page = mine.new_page()
+    other_page = other.new_page()
+    sign_in(page, link)
+    sign_in(other_page, link)
+    other_id = next(d["device"] for d in other.request.get(base + "/v1/devices").json()["devices"] if d["current"])
+
+    page.get_by_test_id("devices-open").click()
+    expect(page.get_by_test_id("devices")).to_be_visible()
+    expect(page.get_by_test_id("device").filter(has_text="This device")).to_have_count(1)
+    page.locator(f'[data-device="{other_id}"]').click()
+    expect(page.locator(f'[data-device="{other_id}"]')).to_have_count(0)
+
+    expect(other_page.get_by_role("heading", name="Sign in to the console")).to_be_visible(timeout=60000)
+    assert other.request.get(base + "/v1/sessions").status == 401
+    assert page.request.get(base + "/v1/sessions").status == 200
+    mine_id = next(d["device"] for d in mine.request.get(base + "/v1/devices").json()["devices"] if d["current"])
+    mine.request.post(f"{base}/v1/devices/{mine_id}/sign-out")
+    mine.close()
+    other.close()
 
 
 # ---------------------------------------------------------------- sessions
@@ -256,8 +307,7 @@ def test_a_sign_in_hands_off_with_a_session_link_that_opens_anywhere(browser, pa
     expect(page.get_by_test_id("live-view")).to_have_attribute("data-view-only", "false")
 
     session_link = page.get_by_test_id("share-link").inner_text()
-    base = link.split("/console")[0]
-    assert session_link.startswith(base + "/console?key=") and session_link.endswith("&session=" + session)
+    assert session_link == link + "#" + session
 
     page.context.grant_permissions(["clipboard-read", "clipboard-write"])
     page.get_by_test_id("copy-link").click()
@@ -267,7 +317,7 @@ def test_a_sign_in_hands_off_with_a_session_link_that_opens_anywhere(browser, pa
     # The link the agent sends lands a phone straight on this session.
     phone = browser.new_context(viewport={"width": 390, "height": 844}, is_mobile=True, has_touch=True)
     phone_page = phone.new_page()
-    phone_page.goto(session_link)
+    sign_in(phone_page, session_link)
     expect(phone_page.get_by_test_id("needs-card")).to_be_visible(timeout=30000)
     assert phone_page.evaluate("location.hash.slice(1)") == session
     assert phone_page.evaluate("document.documentElement.scrollWidth <= innerWidth"), "the phone page scrolls sideways"
@@ -313,11 +363,10 @@ def test_show_it_live_brings_a_background_session_to_the_front_and_close_forgets
 # ---------------------------------------------------------------- unshare
 
 
-def test_unshare_expires_the_link_and_a_new_share_works(browser, link):
+def test_unshare_expires_the_link_and_a_new_share_asks_again(browser, link):
     context = browser.new_context()
     page = context.new_page()
-    page.goto(link)
-    expect(page.get_by_test_id("events-state")).to_have_text("Live updates on", timeout=30000)
+    sign_in(page, link)
 
     cloakroom("unshare")
     gone = browser.new_context()
@@ -328,6 +377,8 @@ def test_unshare_expires_the_link_and_a_new_share_works(browser, link):
     fresh = share_link()
     assert fresh != link
     wait_reachable(browser, fresh)
+    # A new share is a new address: the cookie from the old one does not go there.
     page.goto(fresh)
-    expect(page.get_by_test_id("events-state")).to_have_text("Live updates on", timeout=60000)
+    expect(page.get_by_role("heading", name="Sign in to the console")).to_be_visible(timeout=60000)
+    sign_in(page, fresh)
     context.close()

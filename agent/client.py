@@ -1,4 +1,4 @@
-"""`cloakroom chat`, `run`, `cancel`, `notes`, `key`, `smoke`, `share`, `status`: a client for the chat API.
+"""`cloakroom chat`, `run`, `cancel`, `notes`, `key`, `password`, `smoke`, `share`, `status`: a client for the chat API.
 
 Standard library only. It runs inside the container (`docker exec cloakroom
 cloakroom <command>`), so the host needs nothing but Docker.
@@ -44,7 +44,13 @@ def call(method, path, body=None, timeout=None):
                          f"Try: cloakroom start") from exc
 
 
-SHARE_WARNING = "Anyone with this link can control the logged-in browser. Treat it as a secret."
+SHARE_NOTE = "The console asks for the console password, which only the user knows."
+PASSWORD_LINK_WARNING = ("No console password yet, so this is a one-time link that sets one first. "
+                         "Anyone who opens it before the user can take the console: send it only to them.")
+
+
+def share_note(link):
+    return SHARE_NOTE if link["console_password"] else PASSWORD_LINK_WARNING
 
 
 def print_run(run):
@@ -53,8 +59,9 @@ def print_run(run):
     if run.get("needs_user"):
         print(f"Needs the user: {run['needs_user']['task']}")
         print(f"  {run['needs_user']['share_url']}")
-        print(f"  {SHARE_WARNING}")
-        print("  When they are done, continue the session; stop the link with: cloakroom unshare")
+        print("  It opens the console on this session" + (", after setting a console password."
+              if "/password?" in run["needs_user"]["share_url"] else "; it asks for the console password."))
+        print("  When they are done, continue the session.")
         print()
     print(f"status:  {run['status']}   steps: {run['steps']}   cost: ${run['cost_usd']:.4f}")
     if run.get("files"):
@@ -66,29 +73,37 @@ def print_run(run):
     print(f"session: {run['session']}   (continue with: cloakroom chat --session {run['session']} \"...\")")
 
 
-def wait_for_key(link, in_browser):
-    """Print the setup link, then report what happens to it until it is settled."""
-    if in_browser:
-        print("Opened the key page in Cloakroom's browser; the user pastes the key there "
-              "through the viewer (or a `cloakroom share` link).", flush=True)
-    elif link:
-        print(f"Paste the OpenRouter key into: {link['setup_url']}", flush=True)
-    print("Waiting for the key (the link lasts 15 minutes)...", flush=True)
+PAGES = {
+    "key": {"field": "key_setup", "again": "cloakroom key --wait",
+            "opened": "The page is open; waiting for the key to be submitted.",
+            "rejected": "That was not saved",
+            "saved": "Saved. OpenRouter accepted the key."},
+    "password": {"field": "password_setup", "again": "cloakroom password",
+                 "opened": "The page is open; waiting for the password to be submitted.",
+                 "rejected": "That was not saved",
+                 "saved": "Console password saved. Every device that was signed in is signed out."},
+}
+
+
+def wait_for_page(page):
+    """Report what happens to the latest `cloakroom key` or `cloakroom password` link until it is settled."""
+    messages = PAGES[page]
+    print("Waiting for the page (the link lasts 15 minutes)...", flush=True)
     last = None
     while True:
-        progress = call("GET", "/v1/status")["key_setup"] or {}
+        progress = call("GET", "/v1/status")[messages["field"]] or {}
         state = progress.get("state")
         if state != last:
             if state == "opened":
-                print("The page is open; waiting for the key to be submitted.", flush=True)
+                print(messages["opened"], flush=True)
             elif state == "rejected":
-                print(f"OpenRouter rejected that key: {progress.get('error')} "
-                      "The page is still open for another try.", flush=True)
+                print(f"{messages['rejected']}: {progress.get('error')} The page is still open for another try.",
+                      flush=True)
             elif state == "saved":
-                print("Key saved. OpenRouter accepted it.")
+                print(messages["saved"])
                 return 0
             elif state == "expired":
-                print("The link expired before a key was saved. Run `cloakroom key --wait` for a new one.")
+                print(f"The link expired before anything was saved. Run `{messages['again']}` for a new one.")
                 return 1
             last = state
         time.sleep(3)
@@ -124,11 +139,16 @@ def main():
     key.add_argument("--watch", action="store_true",
                      help="wait on the link already issued (by `key --json`) without making a new one")
 
+    password = commands.add_parser("password", help="a one-time link to set or reset the console password")
+    password.add_argument("--share", action="store_true",
+                          help="a link through the share, for a user away from this computer")
+    password.add_argument("--json", action="store_true", help="print the link and return at once")
+
     smoke = commands.add_parser("smoke", help="reach a few big sites and screenshot them")
     smoke.add_argument("sites", nargs="*", help="domains (default: amazon.com walmart.com target.com bestbuy.com)")
     smoke.add_argument("--json", action="store_true")
 
-    share = commands.add_parser("share", help="a private HTTPS link to the console")
+    share = commands.add_parser("share", help="an HTTPS link to the console")
     share.add_argument("--json", action="store_true")
 
     unshare = commands.add_parser("unshare", help="stop the share link")
@@ -171,13 +191,18 @@ def main():
 
     if args.command == "key":
         if args.watch:
-            return wait_for_key(None, False)
+            return wait_for_page("key")
         link = call("POST", "/v1/setup-link", {"in_browser": args.in_browser})
         if args.json and not args.wait:
             print(json.dumps(link, indent=2))
             return 0
         if args.wait:
-            return wait_for_key(link, args.in_browser)
+            if args.in_browser:
+                print("Opened the setup page in Cloakroom's browser; the user fills it in there "
+                      "through the console (a `cloakroom share` link).", flush=True)
+            else:
+                print(f"Paste the OpenRouter key into: {link['setup_url']}", flush=True)
+            return wait_for_page("key")
         if args.in_browser:
             print("Opened the key page in Cloakroom's browser. Paste the key there "
                   "(through the viewer, or `cloakroom share` from a phone).")
@@ -187,6 +212,17 @@ def main():
             print(f"Open this on this machine and paste the key there:\n  {link['setup_url']}")
         print("The link works once and lasts 15 minutes.")
         return 0
+
+    if args.command == "password":
+        link = call("POST", "/v1/password-link", {"share": args.share}, timeout=90 if args.share else None)
+        if args.json:
+            print(json.dumps(link, indent=2))
+            return 0
+        print(f"Set the console password at: {link['password_url']}", flush=True)
+        if args.share:
+            print("It works once, for 15 minutes, from anywhere. Anyone who opens it first can set the "
+                  "password, so send it only to the user.", flush=True)
+        return wait_for_page("password")
 
     if args.command == "smoke":
         print("Visiting " + ", ".join(args.sites or ["amazon.com", "walmart.com", "target.com", "bestbuy.com"])
@@ -211,8 +247,8 @@ def main():
         if link["reused"]:
             print("Already sharing. This link stays the same until you unshare.")
         print(f"{link['url']}\n\nThe Cloakroom console: every session, the live browser, and what needs you.\n"
-              f"{SHARE_WARNING}\nIt can take a few seconds before the link loads.\n"
-              "Stop it with: cloakroom unshare\nThe link changes every time you start a new share.")
+              f"{share_note(link)}\nIt can take a few seconds before the link loads.\n"
+              "Stop it with: cloakroom unshare. The next share has a new address, so devices sign in again.")
         return 0
 
     if args.command == "unshare":
@@ -220,8 +256,8 @@ def main():
         if args.json:
             print(json.dumps({"event": "share_stopped", "stopped": stopped}))
         else:
-            print("Stopped the remote viewer. The old link no longer works." if stopped
-                  else "No remote viewer is running.")
+            print("Stopped sharing. The old link no longer works, and the devices signed in "
+                  "through it are signed out." if stopped else "Nothing is being shared.")
         return 0
 
     if args.command == "status":
