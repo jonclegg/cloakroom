@@ -10,6 +10,15 @@ Candidates come from everything a gallery uses to hold a photo before it is show
 links straight to image files. Each is downloaded through the browser context, so
 it carries the session's cookies and fingerprint, and kept only if it decodes to a
 real photo size. The same photo at several sizes is kept once, at its largest.
+
+Some pages never put the real photos in the DOM. Carvana draws its gallery on a
+canvas; the DOM holds only a blurred placeholder (`?blur=10`, 1024 px wide, so it
+passes the size check) and 180 px thumbnails, while the full gallery sits in the
+page's hydration data. So Cloakroom also reads the JSON in inline scripts
+(including JSON nested in script strings, like Next.js `self.__next_f`), finds the
+smallest object that holds every photo the page shows (matched on host and path,
+since the DOM copy differs only in its size query), and takes the image URLs on
+the same host inside it. URLs that ask the CDN to blur the image are skipped.
 """
 
 from __future__ import annotations
@@ -23,6 +32,9 @@ from urllib.parse import urlparse
 MIN_WIDTH = 400
 MIN_HEIGHT = 250
 MAX_CANDIDATES = 150
+# A low-quality placeholder is usually the real photo with a blur requested from
+# the image CDN: `?blur=10` (Fastly, imgix) or `e_blur` (Cloudinary).
+PLACEHOLDER = re.compile(r"[?&]blur=|[/,]e_blur\b", re.IGNORECASE)
 
 HARVEST = r"""([x, y, minImages]) => {
   const largest = (srcset) => {
@@ -38,19 +50,18 @@ HARVEST = r"""([x, y, minImages]) => {
   const absolute = (url) => {
     try { return new URL(url, location.href).href; } catch (e) { return null; }
   };
+  const imgUrls = (img) => [
+    largest(img.getAttribute('srcset')) || largest(img.dataset.srcset),
+    ...['data-src', 'data-lazy-src', 'data-original', 'data-zoom-image', 'data-full'].map((name) => img.getAttribute(name)),
+    img.currentSrc || img.getAttribute('src'),
+  ];
   const collect = (scope) => {
     const urls = [];
     const add = (url) => {
       const abs = url && absolute(url);
       if (abs && abs.startsWith('http') && !urls.includes(abs)) urls.push(abs);
     };
-    for (const img of scope.querySelectorAll('img')) {
-      add(largest(img.getAttribute('srcset')) || largest(img.dataset.srcset));
-      for (const name of ['data-src', 'data-lazy-src', 'data-original', 'data-zoom-image', 'data-full']) {
-        add(img.getAttribute(name));
-      }
-      add(img.currentSrc || img.getAttribute('src'));
-    }
+    for (const img of scope.querySelectorAll('img')) imgUrls(img).forEach(add);
     for (const source of scope.querySelectorAll('source')) {
       add(largest(source.getAttribute('srcset')) || largest(source.dataset.srcset));
     }
@@ -60,10 +71,79 @@ HARVEST = r"""([x, y, minImages]) => {
     return urls;
   };
 
+  // The photos the page shows (rendered at least 100 px each way, so not icons),
+  // as host + path: the page's data holds the same photo without the size query.
+  const photoPath = (url) => { const parsed = new URL(url); return parsed.host + parsed.pathname; };
+  const shownPaths = (scope) => {
+    const paths = new Set();
+    for (const img of scope.querySelectorAll('img')) {
+      const box = img.getBoundingClientRect();
+      if (box.width < 100 || box.height < 100) continue;
+      for (const url of imgUrls(img)) {
+        const abs = url && absolute(url);
+        if (abs && abs.startsWith('http')) paths.add(photoPath(abs));
+      }
+    }
+    return paths;
+  };
+  const imageValue = /^(https?:)?\/?\/[^\s"'<>]+\.(jpe?g|png|webp|avif|gif)(\?[^\s"'<>]*)?$/i;
+  const fromData = (paths) => {
+    const urls = [];
+    const names = [...paths].map((path) => path.slice(path.lastIndexOf('/') + 1)).filter(Boolean);
+    const mentions = (text) => names.some((name) => text.includes(name));
+    // Walk JSON-like text, tracking which containers enclose each image URL; a
+    // string that is itself JSON (a script string, a flight-data chunk) is walked
+    // on its own. Then take the URLs in the smallest container holding every shown photo.
+    const scan = (text) => {
+      const stack = [];
+      const found = [];
+      let next = 0;
+      for (let i = 0; i < text.length; i++) {
+        const c = text[i];
+        if (c === '{' || c === '[') { stack.push(next++); continue; }
+        if (c === '}' || c === ']') { stack.pop(); continue; }
+        if (c !== '"' && c !== "'") continue;
+        let end = i + 1;
+        while (end < text.length && text[end] !== c) end += text[end] === '\\' ? 2 : 1;
+        const literal = text.slice(i, end + 1);
+        i = end;
+        let value = literal.slice(1, -1);
+        if (c === '"') { try { value = JSON.parse(literal); } catch (e) {} }
+        if (imageValue.test(value)) {
+          const abs = absolute(value);
+          if (abs) found.push({url: abs, within: stack.slice()});
+        } else if (value.length > 200 && /[{[]/.test(value) && mentions(value)) {
+          scan(value);
+        }
+      }
+      const anchors = found.filter((item) => paths.has(photoPath(item.url)));
+      if (!anchors.length) return;
+      let common = anchors[0].within;
+      for (const anchor of anchors) {
+        let depth = 0;
+        while (depth < common.length && common[depth] === anchor.within[depth]) depth++;
+        common = common.slice(0, depth);
+      }
+      // Sharing only the outermost container means the whole page's data, not one item's.
+      if (common.length < 2) return;
+      const container = common[common.length - 1];
+      const hosts = new Set(anchors.map((anchor) => new URL(anchor.url).host));
+      for (const item of found) {
+        if (item.within.includes(container) && hosts.has(new URL(item.url).host) && !urls.includes(item.url)) urls.push(item.url);
+      }
+    };
+    if (!names.length) return urls;
+    for (const script of document.querySelectorAll('script:not([src])')) {
+      if (mentions(script.textContent)) scan(script.textContent);
+    }
+    return urls;
+  };
+  const withData = (urls, scope) => urls.concat(fromData(shownPaths(scope)).filter((url) => !urls.includes(url)));
+
   if (x !== null && y !== null) {
     let el = document.elementFromPoint(x, y);
     while (el && el !== document.documentElement) {
-      if (collect(el).length >= minImages) return {scope: el.tagName.toLowerCase(), urls: collect(el)};
+      if (collect(el).length >= minImages) return {scope: el.tagName.toLowerCase(), urls: withData(collect(el), el)};
       el = el.parentElement;
     }
   }
@@ -83,7 +163,7 @@ HARVEST = r"""([x, y, minImages]) => {
     try { walk(JSON.parse(script.textContent)); } catch (e) {}
   }
   const page = collect(document);
-  return {scope: 'page', urls: structured.concat(page.filter((url) => !structured.includes(url)))};
+  return {scope: 'page', urls: withData(structured.concat(page.filter((url) => !structured.includes(url))), document)};
 }"""
 
 
@@ -143,7 +223,7 @@ def save_images(page, folder, x=None, y=None):
     order = []
     seen_content = set()
     for url in found["urls"][:MAX_CANDIDATES]:
-        if url.startswith("data:"):
+        if url.startswith("data:") or PLACEHOLDER.search(url):
             continue
         try:
             response = page.context.request.get(url, headers={"Referer": page.url}, timeout=30000)
