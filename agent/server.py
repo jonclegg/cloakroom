@@ -51,6 +51,9 @@ import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlparse
 
+from playwright.sync_api import Error as PlaywrightError
+from playwright.sync_api import sync_playwright
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
@@ -394,8 +397,6 @@ class Cloakroom:
     # ---- the worker thread
 
     def work(self):
-        from playwright.sync_api import sync_playwright
-
         playwright = sync_playwright().start()
         while True:
             run = self.queue.get()
@@ -484,8 +485,15 @@ class Cloakroom:
         if session.page is None or session.page.is_closed():
             session.page = context.new_page()
         page = session.page
+        try:
+            page.bring_to_front()
+        except PlaywrightError:
+            # Closed since the last run, by the user in the viewer or another CDP
+            # client; Playwright can still report it open until the next call.
+            self.events.publish("session.tab_lost", session=session.id)
+            page = session.page = context.new_page()
+            page.bring_to_front()
         page.set_default_timeout(30000)
-        page.bring_to_front()
 
         run.status = "running"
         self.events.publish("run.started", run=run.id, session=session.id)
