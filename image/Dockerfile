@@ -7,6 +7,11 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY index.html /usr/share/novnc/index.html
+# Safari can keep a cached noVNC <=1.3 ui.js, which crashes on load if this
+# element is missing (upstream removed it in 1.4). Newer ui.js ignores it. Inline
+# display:none, because noVNC's CSS overrides the hidden attribute on inputs.
+RUN sed -i 's#<textarea id="noVNC_clipboard_text" rows=5></textarea>#&\n                <input id="noVNC_clipboard_clear_button" type="button" style="display:none">#' /usr/share/novnc/vnc.html \
+    && grep -q 'id="noVNC_clipboard_clear_button"' /usr/share/novnc/vnc.html
 COPY cloakroom-serve.sh /usr/local/bin/cloakroom-serve
 # `docker exec cloakroom cloakroom chat|key|smoke|status ...` works from any host
 # shell (macOS, Linux, PowerShell), with nothing installed on the host.
