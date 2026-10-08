@@ -215,9 +215,3 @@ if [ ! -s "${CLOAKROOM_DATA_DIR:-${HOME}/.cloakroom/data}/openrouter.key" ]; the
   echo "  One more step for 'cloakroom chat': add your OpenRouter key with: cloakroom key"
   echo
 fi
-
-if [ "$(uname)" = "Darwin" ]; then
-  open "$viewer_url"
-elif { [ -n "${DISPLAY:-}" ] || [ -n "${WAYLAND_DISPLAY:-}" ]; } && command -v xdg-open >/dev/null 2>&1; then
-  xdg-open "$viewer_url" >/dev/null 2>&1 </dev/null &
-fi

@@ -87,5 +87,3 @@ Write-Host ""
 Write-Host "  For scripts (Playwright, Puppeteer): $cdpUrl"
 Write-Host "  Only this computer can connect. Your logins are kept between restarts."
 Write-Host ""
-
-Start-Process $viewerUrl
