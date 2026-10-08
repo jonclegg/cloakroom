@@ -300,14 +300,15 @@ SIGN_IN_FORM = """<h1>Sign in to the console</h1>
 <script>if (location.hash) document.getElementById('session').value = decodeURIComponent(location.hash.slice(1));</script>"""
 
 NO_PASSWORD = """<h1>No console password yet</h1>
-<p>The console opens only with a password. Ask your agent for a link to set one
-(<code>cloakroom password --share</code>), or run <code>cloakroom key</code> on the computer running Cloakroom.</p>"""
+<p>The console opens only with a password, and none is set. On the computer running Cloakroom,
+open <code>{local_console}</code> and choose one there. Or ask your agent for a password link.</p>"""
 
 
-def sign_in_page(password_set, error=None, session=""):
-    """The sign-in form. `session` carries a session link's #session through a wrong try."""
+def sign_in_page(password_set, error=None, session="", local_console=""):
+    """The sign-in form. `session` carries a session link's #session through a wrong try.
+    With no password yet, where to set one: `local_console`, the console on this computer."""
     if not password_set:
-        return SIGN_IN.format(body=NO_PASSWORD)
+        return SIGN_IN.format(body=NO_PASSWORD.format(local_console=html.escape(local_console)))
     message = f'<p class="error" id="error" role="alert">{html.escape(error)}</p>' if error else ""
     return SIGN_IN.format(body=SIGN_IN_FORM.format(
         invalid="true" if error else "false", describedby=' aria-describedby="error"' if error else "",

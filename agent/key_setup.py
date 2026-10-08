@@ -178,8 +178,8 @@ FORM = """<h1>Set up Cloakroom</h1>
 </form>"""
 
 PASSWORD_FORM = """<h1>{title}</h1>
-<p>You type this when you open a share link to the Cloakroom console. Saving it signs out every
-device that is signed in now, and signs in this one.</p>
+<p>You type this when you open a share link to the Cloakroom console, for example on your phone.
+{effect}</p>
 {message}
 <form method="post" action="/password">
   <input type="hidden" name="code" value="{code}">
@@ -226,6 +226,8 @@ def password_page(code, session, password_set, error=None):
         f"At least {console_auth.MIN_LENGTH} characters. Your password manager can save it.", required=True)
     return PAGE.format(body=PASSWORD_FORM.format(
         title="Choose a new console password" if password_set else "Choose a console password",
+        effect="Saving it signs out every device that is signed in now, and signs in this one." if password_set
+        else "Saving it signs in this browser for 30 days.",
         message=message, code=html.escape(code), session=html.escape(session), password_fields=fields))
 
 

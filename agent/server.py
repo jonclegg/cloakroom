@@ -776,9 +776,15 @@ def make_handler(cloakroom, token):
                     f"Max-Age={console_auth.DEVICE_SECONDS}{secure}")
 
         def _console(self):
-            """The console for a signed-in device; otherwise its sign-in page."""
+            """The console for a signed-in device; otherwise its sign-in page. On this computer
+            with no password yet, the page to choose one: it carries a fresh one-time code, which
+            another website's form could not read, so it cannot set the password either."""
             if self._device() is None:
-                return self._send_html(401, console_auth.sign_in_page(cloakroom.password.is_set()))
+                password_set = cloakroom.password.is_set()
+                if not password_set and key_setup.local_host(self.headers.get("Host")):
+                    return self._send_html(200, key_setup.password_page(cloakroom.password_codes.issue(), "", False))
+                return self._send_html(401, console_auth.sign_in_page(
+                    password_set, local_console=f"http://127.0.0.1:{HOST_PORT}/console"))
             with open(CONSOLE_PAGE) as fh:
                 return self._send_html(200, fh.read())
 
@@ -786,7 +792,8 @@ def make_handler(cloakroom, token):
             form = self._form()
             session = form.get("session", "")
             if not cloakroom.password.is_set():
-                return self._send_html(401, console_auth.sign_in_page(False))
+                return self._send_html(401, console_auth.sign_in_page(
+                    False, local_console=f"http://127.0.0.1:{HOST_PORT}/console"))
             try:
                 cloakroom.password.check(form.get("password", ""))
             except console_auth.SignInRefused as exc:
