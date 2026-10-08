@@ -124,8 +124,11 @@ browser beside its conversation. From it the user can start a session, message o
 to a busy session queues behind its run), **Take over** a working run (it holds after its
 current step and the live view takes their clicks), **Hand back**, **Stop**, press **Done,
 carry on** on one that needs them, **Show it live** for a tab that is in the background, and
-**Close** a session. It updates live from the event stream. **Devices** lists the browsers
-signed in, and signs one or all of them out.
+**Close** a session. It updates live from the event stream. While a session works, its message
+shows what the current step is doing (looking at the page, thinking, or the action it chose),
+the model's reason, and how long it has taken; each finished step keeps its reason and the
+model's reasoning text. **Devices** lists the browsers signed in, and signs one or all of
+them out.
 
 The console asks for the console password. Signing in keeps that browser signed in for 30
 days, but only on this link: every new share has a new address, and the cookie does not go
@@ -286,7 +289,8 @@ afterwards, so their phone stays signed in for the next hand-off.
 every state change, in order: `run.queued`, `run.started`, `run.step` (the step, its
 screenshot URL, and any files it saved), `run.finished` (status, reply, files, cost),
 `run.cancel_requested`, `session.created`, `session.expired`, `session.tab_lost`,
-`run.paused`, `run.resumed`, `session.focused`, `session.closed`, `browser.connected`,
+`run.phase` (looking, thinking or acting, inside a step), `run.paused`, `run.resumed`,
+`session.focused`, `session.closed`, `browser.connected`,
 `share.started`, `share.stopped`, `smoke.*`, `key.*`, `password.*`, `console.signed_in` and
 `console.sign_in_refused`. `?run=<id>` or `?session=<id>` narrows it. To
 resume after a dropped connection, send the last `id` back as `Last-Event-ID` (or
@@ -434,7 +438,7 @@ For the console on a phone: `docker exec cloakroom cloakroom share`.
 - **Updates:** run the installer again; `cloakroom start` pulls the newest image. `CLOAKROOM_IMAGE` in `.env` pins another tag (CI publishes `:latest` from `main`, `:<branch>` from branches, and `:sha-<commit>`).
 - **Smoke test:** `cloakroom smoke [sites]` enters each site (default Amazon, Walmart, Target, Best Buy) from Bing on the API's browser worker, works any bot check when the OpenRouter key is set, and writes `report.html`, the screenshots and `result.json` to `~/.cloakroom/data/smoke/<id>/`.
 - **Console:** [`agent/console.html`](../../agent/console.html), served by the API at `/console`. It polls `GET /v1/events/next` rather than reading the SSE stream, because Cloudflare quick tunnels hold an SSE response until it ends. `/viewer/...` proxies noVNC (its files, and its websocket byte for byte), so one tunnel carries the console and the live browser. Every route but the sign-in, setup and password pages needs the bearer token or a device cookie ([`agent/console_auth.py`](../../agent/console_auth.py)), and a cookie is accepted only on the host it signed in through, from a page on that same origin.
-- **Console tests:** `pytest tests/test_console_auth.py` checks the password rules (and that the page's meter scores like the server), the lockout, and device cookies, with no Cloakroom running. `CLOAKROOM_CONSOLE_PASSWORD=… pytest tests/test_console.py` drives a headless Chromium (the host's Playwright) through the share link against the running Cloakroom: sign-in and the device cookie, signing out another device, a new session to its reply, a queued follow-up, take over / hand back / stop, a sign-in handoff opened on a phone-sized browser, show it live, close, and unshare. Runs use the real model: a few cents and about ten minutes.
+- **Console tests:** `pytest tests/test_console_auth.py` checks the password rules (and that the page's meter scores like the server), the lockout, and device cookies, with no Cloakroom running. `CLOAKROOM_CONSOLE_PASSWORD=… pytest tests/test_console.py` drives a headless Chromium (the host's Playwright) through the share link against the running Cloakroom: sign-in and the device cookie, signing out another device, a new session to its reply (with the live view, the newest message and the reply box all on screen without scrolling), a queued follow-up, take over / hand back / stop, a sign-in handoff opened on a phone-sized browser, show it live, close, and unshare. Runs use the real model: a few cents and about ten minutes.
 - **Plain Compose:** `cp .env.example .env && docker compose up -d`, then `docker compose down`.
 
 ### Links

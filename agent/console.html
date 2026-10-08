@@ -2,125 +2,166 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="referrer" content="no-referrer">
 <title>Cloakroom</title>
 <style>
-/* One screen, like a chat app: sessions on the left, the chosen one on the right
-   (its live browser beside its conversation). Dark throughout; status by colour. */
+/* One screen, nothing scrolls but the conversation. Sessions on the left, the chosen
+   session's live browser in the middle with what it is doing right now under it, and
+   its conversation on the right, held at the newest line with the message box below.
+   Narrower screens put the sessions in a drawer; phones stack browser over conversation. */
 :root {
   color-scheme: dark;
   --ground: #0E1014; --panel: #161920; --raised: #1D212A; --line: #2A2F3A; --line-soft: #222630;
   --ink: #E8EAEF; --muted: #9AA1AD; --soft: #C3C8D1;
-  --accent: #7AA7FF; --accent-strong: #3D6FF0; --accent-wash: #17223A; --accent-line: #263A66;
+  --accent: #7AA7FF; --accent-strong: #3D6FF0; --accent-wash: #17223A; --accent-line: #263A66; --accent-ink: #B9CEFF;
   --needs: #F5B23E; --needs-ink: #F8CB73; --needs-wash: #2C2310; --needs-line: #5C4415;
   --ok: #3FB950; --ok-ink: #7FDB98; --ok-wash: #11261A;
-  --wait: #8A919E; --bad: #FF8A80;
+  --wait: #8A919E; --bad: #FF8A80; --live: #FF5A4E;
   --sans: system-ui, -apple-system, "Segoe UI", sans-serif;
   --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 }
 * { box-sizing: border-box; }
 html, body { height: 100%; }
-body { margin: 0; background: var(--ground); color: var(--ink); font: 14px/1.45 var(--sans); }
+body { margin: 0; background: var(--ground); color: var(--ink); font: 14px/1.45 var(--sans); display: flex; flex-direction: column; overflow: hidden; }
 a { color: var(--accent); }
 button, input, textarea { font: inherit; color: inherit; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 [hidden] { display: none !important; }
 .muted { color: var(--muted); }
 .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex: none; background: var(--wait); }
+@keyframes pulse { 50% { opacity: .3; } }
 
-.top { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; padding: 12px 20px; border-bottom: 1px solid var(--line); background: var(--panel); }
-.brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 17px; }
-.top .state { display: flex; flex-wrap: wrap; gap: 14px; font-size: 13px; color: var(--muted); }
-.top .state span { display: inline-flex; align-items: center; gap: 6px; }
-
-.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 40px; padding: 0 14px; border-radius: 8px; border: 1px solid var(--line); background: var(--raised); color: var(--ink); font-weight: 600; cursor: pointer; text-decoration: none; }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 36px; padding: 0 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--raised); color: var(--ink); font-weight: 600; cursor: pointer; text-decoration: none; white-space: nowrap; }
 .btn:hover { border-color: #3A4150; }
 .btn:disabled { opacity: .5; cursor: default; }
 .btn.primary { background: var(--accent-strong); border-color: var(--accent-strong); color: #fff; }
 .btn.amber { background: var(--needs); border-color: var(--needs); color: #1A1305; }
 .btn.quiet { background: transparent; }
-.btn.big { min-height: 48px; padding: 0 20px; font-size: 15px; }
+.btn.small { min-height: 30px; padding: 0 10px; font-size: 13px; }
 
-.app { display: flex; flex-wrap: wrap; align-items: stretch; min-height: calc(100% - 65px); }
-.list { flex: 1 1 300px; max-width: 100%; border-right: 1px solid var(--line); background: var(--panel); }
-.detail { flex: 999 1 640px; min-width: 0; display: flex; flex-direction: column; }
-@media (min-width: 980px) { .list { flex: 0 0 330px; } }
+.top { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px; padding: 10px 20px; padding-top: calc(10px + env(safe-area-inset-top, 0px)); border-bottom: 1px solid var(--line); background: var(--panel); }
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 17px; }
+.top .state { display: flex; flex-wrap: wrap; gap: 14px; font-size: 13px; color: var(--muted); }
+.top .state span { display: inline-flex; align-items: center; gap: 6px; }
+.sessions-toggle { display: none; }
+.sessions-toggle .dot { background: var(--needs); }
 
-.ask { padding: 16px; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 8px; }
+.app { flex: 1; min-height: 0; display: grid; grid-template-columns: 290px minmax(0, 1fr) 380px; }
+.app.empty { grid-template-columns: 290px minmax(0, 1fr); }
+
+/* sessions */
+.rail { min-height: 0; overflow-y: auto; border-right: 1px solid var(--line); background: var(--panel); }
+.ask { padding: 14px 16px; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 8px; }
 .ask label { font-weight: 600; font-size: 13px; }
 .ask form { display: flex; gap: 8px; }
-.ask input { flex: 1; min-width: 0; min-height: 40px; padding: 0 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--ground); }
-.group { padding: 14px 16px 6px; font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.ask input { flex: 1; min-width: 0; min-height: 36px; padding: 0 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--ground); }
+.group { padding: 12px 16px 4px; font-size: 11px; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); }
 .empty-list { padding: 16px; color: var(--muted); }
-.item { display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 4px 12px; width: 100%; text-align: left; padding: 10px 16px; border: 0; border-left: 3px solid transparent; background: transparent; cursor: pointer; }
+.item { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 2px 12px; width: 100%; text-align: left; padding: 8px 16px; border: 0; border-left: 3px solid transparent; background: transparent; cursor: pointer; }
 .item:hover { background: var(--raised); }
 .item[aria-current="true"] { background: var(--raised); border-left-color: var(--accent); }
-.item .thumb { grid-row: span 3; width: 72px; height: 46px; border-radius: 6px; overflow: hidden; background: var(--line-soft); border: 1px solid var(--line); }
+.item .thumb { grid-row: span 3; width: 64px; height: 40px; border-radius: 6px; overflow: hidden; background: var(--line-soft); border: 1px solid var(--line); }
 .item .thumb img { width: 100%; height: 100%; object-fit: cover; object-position: top left; display: block; }
 .item .site { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .item .msg { color: var(--soft); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .status { font-size: 12px; display: inline-flex; align-items: center; gap: 6px; color: var(--muted); }
 .status.needs { color: var(--needs-ink); } .status.needs .dot { background: var(--needs); }
-.status.working { color: var(--accent); } .status.working .dot { background: var(--accent); }
+.status.working { color: var(--accent); } .status.working .dot { background: var(--accent); animation: pulse 1.2s ease-in-out infinite; }
 .status.paused { color: var(--needs-ink); } .status.paused .dot { background: var(--needs); }
 .status.done { color: var(--ok-ink); } .status.done .dot { background: var(--ok); }
 
-.head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; padding: 16px 20px; border-bottom: 1px solid var(--line); }
-.head h1 { margin: 0; font-size: 20px; overflow-wrap: anywhere; }
-.head .status { font-size: 13px; font-weight: 600; padding: 4px 10px; border-radius: 999px; background: var(--raised); }
-.head .actions { margin-left: auto; display: flex; flex-wrap: wrap; gap: 8px; }
+/* the chosen session: header, then the browser filling the rest */
+.stage { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.session { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 12px; padding: 14px 18px 16px; }
+.head { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
+.head h1 { margin: 0; font-size: 18px; overflow-wrap: anywhere; }
+.head .status { font-weight: 600; padding: 3px 9px; border-radius: 999px; background: var(--raised); }
+.head .asked { flex: 1 1 140px; min-width: 0; color: var(--soft); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.head .actions { margin-left: auto; display: flex; flex-wrap: wrap; gap: 6px; }
 
-.task { margin: 16px 20px 0; padding: 16px 18px; border-radius: 12px; background: var(--needs-wash); border: 1px solid var(--needs-line); display: flex; flex-wrap: wrap; align-items: center; gap: 14px 24px; }
-.task .what { flex: 1 1 360px; min-width: 0; }
-.task .eyebrow { font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--needs-ink); }
-.task .big { font-size: 19px; font-weight: 700; margin: 4px 0; }
-.task .buttons { display: flex; flex-wrap: wrap; gap: 8px; }
-.phone { margin: 10px 20px 0; padding: 12px 14px; border-radius: 10px; background: var(--panel); border: 1px solid var(--line); display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; font-size: 13px; }
-.phone .link { flex: 1 1 280px; min-width: 0; font: 12px var(--mono); color: var(--soft); overflow-wrap: anywhere; }
-.note { margin: 16px 20px 0; padding: 12px 16px; border-radius: 10px; font-size: 13px; background: var(--accent-wash); color: #B9CEFF; border: 1px solid var(--accent-line); }
+.frame { flex: 1; min-height: 0; display: flex; flex-direction: column; border-radius: 12px; overflow: hidden; border: 1px solid var(--line); background: var(--panel); }
+.frame.mine { border: 2px solid var(--accent); }
+.frame.needs { border: 2px solid var(--needs); }
+.frame .bar { flex: none; display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-bottom: 1px solid var(--line); background: var(--raised); }
+.frame .url { flex: 1; min-width: 0; font: 12px var(--mono); color: var(--soft); background: var(--ground); border: 1px solid var(--line); border-radius: 6px; padding: 5px 9px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tag { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--muted); white-space: nowrap; }
+.tag.live { color: var(--bad); } .tag.live .dot { background: var(--live); }
+.tag.mouse { color: var(--accent-ink); } .tag.mouse .dot { background: var(--accent); }
 
-.work { display: flex; flex-wrap: wrap; gap: 20px; padding: 16px 20px 24px; align-items: flex-start; }
-.browser { flex: 999 1 520px; min-width: 0; border-radius: 12px; overflow: hidden; border: 1px solid var(--line); background: var(--panel); }
-.browser.mine { border: 2px solid var(--accent); }
-.browser .bar { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-bottom: 1px solid var(--line); background: var(--raised); }
-.browser .url { flex: 1; min-width: 0; font: 12px var(--mono); color: var(--soft); background: var(--ground); border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.browser .tag { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--muted); white-space: nowrap; }
-.browser .tag.live { color: var(--bad); } .browser .tag.live .dot { background: #FF5A4E; }
-.browser .driving { padding: 9px 12px; background: var(--accent-wash); color: #B9CEFF; font-size: 13px; border-bottom: 1px solid var(--accent-line); }
-.screen { position: relative; background: #0A0B0E; aspect-ratio: 16 / 10; max-width: 100%; }
-.screen > div, .screen > img { position: absolute; inset: 0; width: 100%; height: 100%; }
-.screen > img { object-fit: contain; object-position: top center; }
-.screen .blank { display: flex; align-items: center; justify-content: center; text-align: center; padding: 20px; color: var(--muted); }
-.screen .over { position: absolute; left: 12px; bottom: 12px; right: auto; top: auto; width: auto; height: auto; display: inline-flex; align-items: center; gap: 8px; padding: 7px 11px; border-radius: 8px; background: rgba(10,11,14,.9); border: 1px solid var(--line); font-size: 12px; }
-.screen .over .dot { background: var(--accent); animation: pulse 1.2s ease-in-out infinite; }
-@keyframes pulse { 50% { opacity: .3; } }
-@media (prefers-reduced-motion: reduce) { .screen .over .dot { animation: none; } }
-.still-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 9px 12px; border-top: 1px solid var(--line); font-size: 13px; color: var(--muted); }
+.banner { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 10px 12px; font-size: 13px; border-bottom: 1px solid var(--line); }
+.banner .what { flex: 1 1 260px; min-width: 0; }
+.banner .buttons { display: flex; flex-wrap: wrap; gap: 8px; }
+.banner.needs { background: var(--needs-wash); color: var(--needs-ink); border-color: var(--needs-line); }
+.banner.needs .task-text { color: var(--ink); font-weight: 600; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.banner.mine { background: var(--accent-wash); color: var(--accent-ink); border-color: var(--accent-line); }
+.banner.still { background: var(--raised); color: var(--muted); justify-content: space-between; }
+.banner .phone { flex: 1 1 100%; min-width: 0; display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; }
+.banner .phone .link { flex: 1; min-width: 0; font: 12px var(--mono); color: var(--soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-.chat { flex: 1 1 340px; min-width: 0; border-radius: 12px; border: 1px solid var(--line); background: var(--panel); display: flex; flex-direction: column; }
-.chat h2 { margin: 0; padding: 12px 16px; font-size: 14px; border-bottom: 1px solid var(--line); }
-.thread { padding: 14px 16px; display: flex; flex-direction: column; gap: 14px; }
+.viewport { flex: 1; min-height: 0; position: relative; background: #0A0B0E; }
+.viewport > div, .viewport > img { position: absolute; inset: 0; width: 100%; height: 100%; }
+.viewport > img { object-fit: contain; object-position: center; }
+.viewport .blank { display: flex; align-items: center; justify-content: center; text-align: center; padding: 20px; color: var(--muted); }
+
+/* what Cloakroom is doing right now, attached to the screen it is doing it on */
+.now { flex: none; display: flex; align-items: center; gap: 10px; min-height: 40px; padding: 8px 12px; border-top: 1px solid var(--line); background: var(--raised); font-size: 13px; }
+.now .label { font-weight: 600; white-space: nowrap; }
+.now .text { flex: 1; min-width: 0; color: var(--soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.now .time { font: 12px var(--mono); color: var(--muted); white-space: nowrap; }
+.now .time { font-variant-numeric: tabular-nums; }
+.now.working .dot { background: var(--accent); animation: pulse 1.2s ease-in-out infinite; }
+.now.working .label { color: var(--accent); }
+.now.done .dot { background: var(--ok); }
+.now.needs, .now.paused { background: var(--needs-wash); }
+.now.needs .label, .now.paused .label { color: var(--needs-ink); }
+.now.needs .dot, .now.paused .dot { background: var(--needs); animation: pulse 1.2s ease-in-out infinite; }
+
+/* conversation */
+.convo { min-height: 0; display: flex; flex-direction: column; border-left: 1px solid var(--line); background: var(--panel); }
+.convo-head { flex: none; padding: 12px 16px; border-bottom: 1px solid var(--line); font-weight: 600; }
+.thread-wrap { flex: 1; min-height: 0; position: relative; }
+.thread { position: absolute; inset: 0; overflow-y: auto; padding: 14px 16px 18px; display: flex; flex-direction: column; gap: 12px; }
+.thread > :first-child { margin-top: auto; }
 .m { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
 .m.you { align-items: flex-end; }
-.m .who { font-size: 12px; color: var(--muted); }
-.bubble { max-width: 94%; padding: 10px 12px; border-radius: 10px; background: var(--raised); white-space: pre-wrap; overflow-wrap: anywhere; }
+.m .who { font-size: 11px; color: var(--muted); }
+.bubble { max-width: 94%; padding: 9px 12px; border-radius: 10px; background: var(--raised); white-space: pre-wrap; overflow-wrap: anywhere; }
 .m.you .bubble { background: var(--accent-strong); color: #fff; }
 .m.needs .bubble { background: var(--needs-wash); border: 1px solid var(--needs-line); }
-.m .meta { font-size: 12px; color: var(--muted); }
-details.steps { width: 94%; font-size: 13px; }
-details.steps summary { cursor: pointer; color: var(--muted); font-size: 12px; padding: 2px 0; }
-details.steps ol { margin: 6px 0 0; padding: 0 0 0 22px; display: flex; flex-direction: column; gap: 6px; color: var(--soft); }
+.m .meta { font-size: 11px; color: var(--muted); }
+.m .working { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; max-width: 94%; font-size: 13px; color: var(--accent); }
+.m .working .dot { background: var(--accent); animation: pulse 1.2s ease-in-out infinite; }
+.m .working.queued { color: var(--muted); } .m .working.queued .dot { background: var(--wait); animation: none; }
+details.steps { width: 94%; font-size: 13px; border-left: 2px solid var(--line); padding: 2px 0 2px 12px; }
+details.steps.running { border-left-color: var(--accent-line); }
+details.steps > summary { cursor: pointer; color: var(--muted); font-size: 12px; }
+details.steps.running > summary { color: var(--accent); }
+details.steps ol { margin: 6px 0 0; padding: 0 0 0 20px; display: flex; flex-direction: column; gap: 6px; color: var(--soft); }
+details.steps li.current { color: var(--ink); }
+details.steps li.current::marker { color: var(--accent); }
 details.steps .did { display: block; font: 12px var(--mono); color: var(--muted); overflow-wrap: anywhere; }
+details.steps .why, .m .working .why { display: block; font-size: 12px; color: var(--soft); margin-top: 2px; }
+.m .working .why { flex-basis: 100%; }
+details.steps .why b, .m .working .why b, .now .text b { color: var(--muted); font-weight: 600; }
+details.thinking { margin-top: 4px; }
+details.thinking summary { cursor: pointer; font-size: 12px; color: var(--muted); }
+details.thinking div { margin-top: 4px; padding: 8px 10px; border-radius: 6px; background: var(--ground); border: 1px solid var(--line-soft); font-size: 12px; color: var(--muted); white-space: pre-wrap; max-height: 16rem; overflow: auto; }
 .files { display: flex; gap: 6px; flex-wrap: wrap; max-width: 94%; }
 .files a { font-size: 12px; padding: 3px 8px; border-radius: 6px; background: var(--ok-wash); color: var(--ok-ink); text-decoration: none; }
-.compose { margin-top: auto; padding: 12px 16px 16px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 8px; }
-.compose textarea { width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--ground); resize: vertical; }
-.compose .row { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; }
+.jump { position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%); border-radius: 999px; box-shadow: 0 4px 14px rgba(0,0,0,.45); }
+
+.compose { flex: none; padding: 10px 12px 12px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 8px; }
+.compose .needs-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px; background: var(--needs-wash); border: 1px solid var(--needs-line); color: var(--needs-ink); font-size: 13px; }
+.compose .needs-row span { flex: 1; min-width: 0; }
+.compose .row { display: flex; gap: 8px; align-items: flex-end; }
+.compose textarea { flex: 1; min-width: 0; min-height: 40px; max-height: 140px; padding: 9px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--ground); resize: none; field-sizing: content; }
+.compose .hint { font-size: 11px; color: var(--muted); }
+
 .welcome { padding: 48px 24px; max-width: 34rem; color: var(--soft); }
 .welcome h1 { font-size: 22px; color: var(--ink); margin: 0 0 8px; }
-.top .devices-button { margin-left: auto; min-height: 34px; }
+.top .devices-button { margin-left: auto; }
 dialog { width: min(30rem, calc(100vw - 32px)); padding: 0; border-radius: 12px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); }
 dialog::backdrop { background: rgba(0,0,0,.6); }
 dialog .dialog-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 14px 18px; border-bottom: 1px solid var(--line); }
@@ -133,19 +174,52 @@ dialog .body > p { margin: 0 0 8px; color: var(--muted); font-size: 13px; }
 .device .what span { color: var(--muted); font-size: 13px; }
 .device .tag { font-size: 12px; color: var(--ok-ink); white-space: nowrap; }
 .btn.danger { color: var(--bad); background: transparent; margin-top: 12px; }
-.error { margin: 12px 20px 0; padding: 10px 14px; border-radius: 8px; background: #2A1414; color: var(--bad); border: 1px solid #5A2626; font-size: 13px; }
+.welcome .btn { display: none; }
+.error { margin: 12px 18px 0; padding: 10px 14px; border-radius: 8px; background: #2A1414; color: var(--bad); border: 1px solid #5A2626; font-size: 13px; }
+.scrim { display: none; }
 
-@media (max-width: 600px) {
-  .top, .head { padding-inline: 16px; }
-  .work { padding-inline: 16px; }
-  .task, .phone, .note, .error { margin-inline: 16px; }
-  .list { border-right: 0; border-bottom: 1px solid var(--line); }
+@media (max-width: 1280px) {
+  .app { grid-template-columns: 250px minmax(0, 1fr) 340px; }
+  .app.empty { grid-template-columns: 250px minmax(0, 1fr); }
+}
+/* the sessions move into a drawer */
+@media (max-width: 1100px) {
+  .app, .app.empty { grid-template-columns: minmax(0, 1fr) 340px; }
+  .app.empty { grid-template-columns: minmax(0, 1fr); }
+  .sessions-toggle { display: inline-flex; }
+  .rail { position: fixed; z-index: 20; top: 0; bottom: 0; left: 0; width: min(320px, 88vw); transform: translateX(-105%); transition: transform .2s; padding-top: env(safe-area-inset-top, 0px); }
+  body.drawer .rail { transform: none; box-shadow: 0 0 40px rgba(0,0,0,.6); }
+  body.drawer .scrim { display: block; position: fixed; inset: 0; z-index: 10; background: rgba(0,0,0,.5); }
+  .welcome .btn { display: inline-flex; margin-top: 8px; }
+}
+/* phones: browser on top, conversation under it, message box at the bottom */
+@media (max-width: 760px) {
+  .top { padding-inline: 16px; gap: 8px 12px; }
+  .top .state { font-size: 12px; gap: 10px; }
+  .app, .app.empty { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+  /* The browser gets at most this much; when a note above it needs room, the screen shrinks, not the conversation. */
+  .stage { max-height: 62dvh; }
+  .session { padding: 10px 16px 8px; gap: 8px; }
+  .frame { flex: 0 1 auto; }
+  .viewport { flex: 0 1 auto; height: min(calc((100vw - 32px) * .625), 36vh); min-height: 110px; }
+  .banner.needs .task-text { -webkit-line-clamp: 2; }
+  .banner.needs .hint, .banner .phone { display: none; }
+  .convo { border-left: 0; border-top: 1px solid var(--line); }
+  .convo-head { display: none; }
+  .thread { padding: 10px 16px 14px; }
+  .compose { padding: 8px 16px calc(10px + env(safe-area-inset-bottom, 0px)); }
+  .compose .hint { display: none; }
+  .error { margin-inline: 16px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  * { animation: none !important; transition: none !important; }
 }
 </style>
 </head>
 <body>
 
 <header class="top">
+  <button class="btn small sessions-toggle" type="button" id="drawer-open" data-testid="sessions-toggle">Sessions <span id="drawer-count"></span><span class="dot" id="drawer-needs" hidden></span></button>
   <div class="brand">
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a2.5 2.5 0 0 1 2.5 2.5c0 1.4-1.2 2-2.5 3.2V10"/><path d="M12 10 3 17.5h18L12 10Z"/></svg>
     Cloakroom
@@ -154,7 +228,7 @@ dialog .body > p { margin: 0 0 8px; color: var(--muted); font-size: 13px; }
     <span data-testid="browser-state"><span class="dot" id="browser-dot"></span><span id="browser-text">Connecting…</span></span>
     <span data-testid="events-state"><span class="dot" id="events-dot"></span><span id="events-text">Live updates off</span></span>
   </div>
-  <button class="btn quiet devices-button" type="button" id="devices-open" data-testid="devices-open">Devices</button>
+  <button class="btn small quiet devices-button" type="button" id="devices-open" data-testid="devices-open">Devices</button>
 </header>
 
 <dialog id="devices" aria-labelledby="devices-title" data-testid="devices">
@@ -169,8 +243,9 @@ dialog .body > p { margin: 0 0 8px; color: var(--muted); font-size: 13px; }
   </div>
 </dialog>
 
-<div class="app">
-  <nav class="list" aria-label="Sessions">
+<div class="scrim" id="scrim"></div>
+<div class="app empty" id="app">
+  <nav class="rail" aria-label="Sessions">
     <div class="ask">
       <label for="new-message">Ask Cloakroom to do something</label>
       <form id="new-form">
@@ -181,74 +256,81 @@ dialog .body > p { margin: 0 0 8px; color: var(--muted); font-size: 13px; }
     <div id="groups" data-testid="session-list"></div>
   </nav>
 
-  <section class="detail" id="detail">
+  <main class="stage" id="detail">
     <div class="error" id="s-error" hidden role="alert" data-testid="error"></div>
     <div class="welcome" id="welcome">
       <h1>Nothing to show yet</h1>
       <p>Sessions appear here when you or your agent ask Cloakroom to do something. Each one gets its own tab in the browser.</p>
+      <button class="btn primary" type="button" data-open-drawer>Ask Cloakroom to do something</button>
     </div>
 
-    <div id="session" hidden>
+    <div class="session" id="session" hidden>
       <div class="head">
         <h1 id="s-title" data-testid="session-title"></h1>
         <span class="status" id="s-status" data-testid="session-status"><span class="dot"></span><span></span></span>
+        <span class="asked" id="s-asked"></span>
         <div class="actions" id="s-actions"></div>
       </div>
 
-      <div id="s-task" hidden>
-        <div class="task" data-testid="needs-card">
+      <section class="frame" id="s-browser" aria-label="Browser">
+        <div class="bar">
+          <span class="tag" id="s-tag"><span class="dot"></span><span></span></span>
+          <span class="url" id="s-url"></span>
+          <span class="tag mouse" id="s-driving" hidden><span class="dot"></span>You have the mouse</span>
+        </div>
+        <div class="banner needs" id="s-task" hidden data-testid="needs-card">
           <div class="what">
-            <div class="eyebrow">Cloakroom needs you</div>
-            <div class="big" id="s-task-text"></div>
-            <div class="muted">Do it in the browser here, then press Done. Passwords go in the page, never in chat.</div>
+            <div class="task-text" id="s-task-text"></div>
+            <div class="hint">Do it in the page below, then press Done. Passwords go in the page, never in chat.</div>
           </div>
           <div class="buttons">
-            <button class="btn amber big" type="button" data-act="carry-on" data-testid="carry-on">Done, carry on</button>
-            <button class="btn big quiet" type="button" data-act="close" data-testid="close-needs">Close session</button>
+            <button class="btn amber" type="button" data-act="carry-on" data-testid="carry-on">Done, carry on</button>
+            <button class="btn quiet" type="button" data-act="close" data-testid="close-needs">Close session</button>
+          </div>
+          <div class="phone" id="s-phone" hidden>
+            <span>On your phone instead?</span>
+            <span class="link" id="s-link" data-testid="share-link"></span>
+            <button class="btn small" type="button" data-act="copy" data-testid="copy-link">Copy link</button>
           </div>
         </div>
-        <div class="phone" id="s-phone" hidden>
-          <span>On your phone instead? Open (it asks for the console password)</span>
-          <span class="link" id="s-link" data-testid="share-link"></span>
-          <button class="btn" type="button" data-act="copy" data-testid="copy-link">Copy link</button>
+        <div class="banner mine" id="s-paused" hidden data-testid="paused-note">You have the mouse: click and type right here. Cloakroom holds after its current step and picks up from what is on screen when you hand back.</div>
+        <div class="banner still" id="s-still-bar" hidden>
+          <span id="s-still-text"></span>
+          <button class="btn small" type="button" data-act="focus" id="s-focus" data-testid="show-live">Show it live</button>
         </div>
-      </div>
-      <div class="note" id="s-paused" hidden data-testid="paused-note">You have the mouse. Cloakroom holds after its current step and picks up from what is on screen when you hand back.</div>
-
-      <div class="work">
-        <div class="browser" id="s-browser">
-          <div class="bar">
-            <span class="tag" id="s-tag"><span class="dot"></span><span></span></span>
-            <span class="url" id="s-url"></span>
-          </div>
-          <div class="driving" id="s-driving" hidden>You have the mouse: click and type right here.</div>
-          <div class="screen">
-            <div id="live" hidden data-testid="live-view"></div>
-            <img id="still" alt="" hidden data-testid="still-view">
-            <div class="blank" id="blank" hidden>A new tab. Nothing here yet.</div>
-            <div class="over" id="s-doing" hidden><span class="dot"></span><span></span></div>
-          </div>
-          <div class="still-bar" id="s-still-bar" hidden>
-            <span id="s-still-text"></span>
-            <button class="btn" type="button" data-act="focus" id="s-focus" data-testid="show-live">Show it live</button>
-          </div>
+        <div class="viewport">
+          <div id="live" hidden data-testid="live-view"></div>
+          <img id="still" alt="" hidden data-testid="still-view">
+          <div class="blank" id="blank" hidden>A new tab. Nothing here yet.</div>
         </div>
-
-        <div class="chat">
-          <h2>Conversation</h2>
-          <div class="thread" id="s-thread" data-testid="thread"></div>
-          <form class="compose" id="s-compose">
-            <label for="reply" class="muted" style="font-size:12px">Message Cloakroom about this session</label>
-            <textarea id="reply" rows="2" data-testid="reply"></textarea>
-            <div class="row">
-              <span class="muted" style="font-size:12px" id="s-compose-hint">Same tab, same conversation.</span>
-              <button class="btn primary" type="submit" data-testid="send">Send</button>
-            </div>
-          </form>
+        <div class="now" id="s-now" data-testid="now" aria-live="polite">
+          <span class="dot"></span>
+          <span class="label" id="now-label"></span>
+          <span class="text" id="now-text"></span>
+          <span class="time elapsed" id="now-time"></span>
         </div>
-      </div>
+      </section>
     </div>
-  </section>
+  </main>
+
+  <aside class="convo" id="convo" hidden aria-label="Conversation">
+    <div class="convo-head">Conversation</div>
+    <div class="thread-wrap">
+      <div class="thread" id="s-thread" data-testid="thread"></div>
+      <button class="btn primary small jump" type="button" id="jump" hidden data-testid="jump">↓ Latest</button>
+    </div>
+    <form class="compose" id="s-compose">
+      <div class="needs-row" id="s-compose-needs" hidden>
+        <span>Done in the page? Cloakroom carries on from what is on screen.</span>
+        <button class="btn amber small" type="button" data-act="carry-on">Done, carry on</button>
+      </div>
+      <div class="row">
+        <textarea id="reply" rows="1" aria-label="Message Cloakroom about this session" data-testid="reply"></textarea>
+        <button class="btn primary" type="submit" data-testid="send">Send</button>
+      </div>
+      <span class="hint" id="s-compose-hint">Same tab, same conversation.</span>
+    </form>
+  </aside>
 </div>
 
 <script type="module">
@@ -262,6 +344,8 @@ let sessions = [];
 let selected = decodeURIComponent(location.hash.slice(1)) || null;
 let status = {};
 let rfb = null;
+let threadSession = null;
+const detailsOpen = new Map();
 const $ = (id) => document.getElementById(id);
 
 async function api(method, path, body) {
@@ -288,6 +372,24 @@ function setStatus(el, state) {
   el.className = 'status ' + state;
   el.lastElementChild.textContent = STATE_LABEL[state];
 }
+function totalSeconds(m) { return m.steps.reduce((sum, step) => sum + (step.seconds || 0), 0); }
+function firstLine(text) { return (text || '').split('\n').map((line) => line.trim()).find(Boolean) || ''; }
+function phaseOf(m) { return m.phase || { phase: 'starting', text: 'Getting the tab ready' }; }
+function why(reason) {
+  const span = document.createElement('span'); span.className = 'why';
+  span.innerHTML = '<b>Why:</b> ';
+  span.append(reason);
+  return span;
+}
+// A details element keeps its open state across re-renders; until the user toggles it, `fallback`.
+function keptDetails(className, key, fallback) {
+  const details = document.createElement('details');
+  details.className = className;
+  details.dataset.key = key;
+  details.open = detailsOpen.get(key) ?? fallback;
+  return details;
+}
+function setDrawer(open) { document.body.classList.toggle('drawer', open); }
 
 // ------------------------------------------------------------- the list
 function renderList() {
@@ -324,19 +426,22 @@ function renderList() {
       groups.append(item);
     }
   }
+  $('drawer-count').textContent = sessions.length ? String(sessions.length) : '';
+  $('drawer-needs').hidden = !sessions.some((s) => s.state === 'needs' && s.session !== selected);
 }
 
 // ------------------------------------------------------------- one session
 function actionButton(label, act, cls = '') {
   const button = document.createElement('button');
   button.type = 'button';
-  button.className = 'btn ' + cls;
+  button.className = 'btn small ' + cls;
   button.dataset.act = act;
   button.dataset.testid = act;
   button.textContent = label;
   return button;
 }
 
+// A reply reads in the order it happened: the steps, then what Cloakroom said.
 function messageEl(m) {
   const el = document.createElement('div');
   const asking = m.from === 'cloakroom' && ['needs_user', 'needs_input'].includes(m.status);
@@ -344,56 +449,139 @@ function messageEl(m) {
   el.dataset.testid = m.from === 'you' ? 'message-you' : 'message-cloakroom';
   if (m.status) el.dataset.status = m.status;
   const who = document.createElement('span'); who.className = 'who'; who.textContent = m.from === 'you' ? 'You' : 'Cloakroom';
-  const bubble = document.createElement('div'); bubble.className = 'bubble';
-  if (m.from === 'you') bubble.textContent = m.text;
-  else if (m.status === 'queued') bubble.textContent = 'Waiting for the browser. Cloakroom works on one session at a time.';
-  else if (m.status === 'running') bubble.textContent = m.paused ? 'Holding while you drive.' : 'Working on it…';
-  else bubble.textContent = m.text || '(no reply)';
-  el.append(who, bubble);
+  el.append(who);
+  if (m.from === 'you') {
+    const bubble = document.createElement('div'); bubble.className = 'bubble'; bubble.textContent = m.text;
+    el.append(bubble);
+    return el;
+  }
+  const running = m.status === 'running';
+  if (running) el.dataset.phase = phaseOf(m).phase;
+  if (m.steps?.length) {
+    const details = keptDetails('steps' + (running ? ' running' : ''), m.run, running);
+    details.dataset.testid = 'steps';
+    const summary = document.createElement('summary');
+    const count = `${m.steps.length} step${m.steps.length === 1 ? '' : 's'}`;
+    summary.textContent = running ? `${count} · working` : `${count} · ${totalSeconds(m).toFixed(1)}s`;
+    const list = document.createElement('ol');
+    m.steps.forEach((step, index) => {
+      const li = document.createElement('li');
+      if (running && index === m.steps.length - 1) li.className = 'current';
+      li.textContent = step.observation || '';
+      const did = document.createElement('span'); did.className = 'did';
+      did.textContent = `${step.did || ''}${step.seconds ? ` · ${step.seconds}s` : ''}`;
+      li.append(did);
+      if (step.reason) li.append(why(step.reason));
+      if (step.thinking) {
+        const thinking = keptDetails('thinking', `${m.run}:${index}`, false);
+        const label = document.createElement('summary'); label.textContent = 'The model’s reasoning';
+        const text = document.createElement('div'); text.textContent = step.thinking;
+        thinking.append(label, text);
+        li.append(thinking);
+      }
+      list.append(li);
+    });
+    details.append(summary, list);
+    el.append(details);
+  }
+  if (m.status === 'queued' || running) {
+    const working = document.createElement('span');
+    working.className = 'working' + (m.status === 'queued' ? ' queued' : '');
+    working.innerHTML = '<span class="dot"></span><span></span>';
+    working.lastElementChild.textContent = m.status === 'queued'
+      ? 'Waiting for the browser. Cloakroom works on one session at a time.'
+      : m.paused ? 'Holding while you drive.' : `${phaseOf(m).text}…`;
+    if (running && !m.paused && phaseOf(m).reason) working.append(why(phaseOf(m).reason));
+    el.append(working);
+    return el;
+  }
+  const bubble = document.createElement('div'); bubble.className = 'bubble'; bubble.textContent = m.text || '(no reply)';
+  el.append(bubble);
   if (m.files?.length) {
     const files = document.createElement('div'); files.className = 'files';
     for (const f of m.files) { const a = document.createElement('a'); a.href = f.url; a.target = '_blank'; a.rel = 'noopener'; a.textContent = f.path; files.append(a); }
     el.append(files);
   }
-  if (m.steps?.length) {
-    const details = document.createElement('details');
-    details.className = 'steps';
-    details.dataset.testid = 'steps';
-    details.open = m.status === 'running';
-    const summary = document.createElement('summary');
-    summary.textContent = `${m.steps.length} step${m.steps.length === 1 ? '' : 's'}`;
-    const list = document.createElement('ol');
-    for (const step of m.steps) {
-      const li = document.createElement('li');
-      li.textContent = step.observation || '';
-      const did = document.createElement('span'); did.className = 'did';
-      did.textContent = `${step.did || ''}${step.seconds ? ` · ${step.seconds}s` : ''}`;
-      li.append(did);
-      list.append(li);
-    }
-    details.append(summary, list);
-    el.append(details);
-  }
-  if (m.from === 'cloakroom' && m.status !== 'queued') {
-    const meta = document.createElement('span'); meta.className = 'meta';
-    const parts = [];
-    if (m.status !== 'running') parts.push(m.status.replace('_', ' '));
-    parts.push(`${m.steps.length} of up to ${m.max_steps} steps`);
-    parts.push(`$${m.cost_usd.toFixed(4)}`);
-    meta.textContent = parts.join(' · ');
-    el.append(meta);
-  }
+  const meta = document.createElement('span'); meta.className = 'meta';
+  meta.textContent = [m.status.replace('_', ' '), `${m.steps.length} of up to ${m.max_steps} steps`, `$${m.cost_usd.toFixed(4)}`].join(' · ');
+  el.append(meta);
   return el;
+}
+
+// The line under the screen: the newest thing that happened in it.
+function renderNow(s, busyElsewhere) {
+  const running = s.messages.findLast((m) => m.status === 'running');
+  const last = s.messages.findLast((m) => m.from === 'cloakroom');
+  let kind = 'done', label = STATE_LABEL[s.state], text = '', reason = '', time = '', since = null;
+  if (s.state === 'needs') {
+    kind = 'needs'; label = 'Waiting for you';
+    text = 'Do what the note above the page says, then press Done, carry on.';
+  } else if (s.state === 'paused') {
+    kind = 'paused'; label = 'Paused';
+    text = 'You have the mouse. Hand back to Cloakroom when you are done.';
+  } else if (s.state === 'waiting') {
+    kind = 'waiting';
+    text = busyElsewhere ? `The browser is working on ${title(busyElsewhere)} first.` : 'Starting soon.';
+  } else if (running) {
+    kind = 'working';
+    const phase = phaseOf(running);
+    label = `Step ${running.steps.length + 1}`;
+    text = `${phase.text}…`;
+    reason = phase.reason || '';
+    since = phase.since_ms;
+  } else if (last) {
+    text = firstLine(last.text);
+    if (last.steps.length) time = `${totalSeconds(last).toFixed(1)}s`;
+  }
+  $('s-now').className = 'now ' + kind;
+  $('now-label').textContent = label;
+  $('now-text').replaceChildren(text);
+  if (reason) $('now-text').append(' ', why(reason));
+  const clock = $('now-time');
+  if (since) clock.dataset.since = since; else delete clock.dataset.since;
+  clock.textContent = time;
+  clock.title = since ? 'Time on this part of the step' : 'Time the run took';
+  tick();
+}
+// Ticks every element that counts up from a server time (milliseconds).
+function tick() {
+  for (const el of document.querySelectorAll('[data-since]')) {
+    const seconds = Math.max(0, Math.round((Date.now() - Number(el.dataset.since)) / 1000));
+    el.textContent = seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+  }
+}
+setInterval(tick, 1000);
+
+function nearBottom(thread) { return thread.scrollHeight - thread.scrollTop - thread.clientHeight < 60; }
+function toLatest(smooth) {
+  const thread = $('s-thread');
+  thread.scrollTo({ top: thread.scrollHeight, behavior: smooth ? 'smooth' : 'auto' });
+  $('jump').hidden = true;
+}
+
+function renderThread(s) {
+  const thread = $('s-thread');
+  const switched = threadSession !== s.session;
+  const follow = switched || nearBottom(thread);
+  const before = thread.scrollHeight;
+  thread.replaceChildren(...s.messages.map(messageEl));
+  threadSession = s.session;
+  if (follow) toLatest(false);
+  else if (thread.scrollHeight > before) $('jump').hidden = false;
 }
 
 function renderSession() {
   const s = current();
+  $('app').classList.toggle('empty', !s);
   $('welcome').hidden = Boolean(s);
   $('session').hidden = !s;
-  if (!s) return;
+  $('convo').hidden = !s;
+  if (!s) { threadSession = null; return; }
   const busyElsewhere = sessions.find((other) => other.session !== s.session && ['working', 'paused'].includes(other.state));
   $('s-title').textContent = title(s);
   setStatus($('s-status'), s.state);
+  $('s-asked').textContent = lastAsk(s) ? `“${lastAsk(s)}”` : '';
+  $('s-asked').title = lastAsk(s);
 
   const actions = $('s-actions');
   actions.replaceChildren();
@@ -402,8 +590,10 @@ function renderSession() {
   if (s.state === 'waiting') actions.append(actionButton('Stop', 'cancel', 'quiet'));
   if (['done', 'stopped'].includes(s.state)) actions.append(actionButton('Close session', 'close', 'quiet'));
 
-  $('s-task').hidden = s.state !== 'needs';
-  if (s.state === 'needs') {
+  const needs = s.state === 'needs';
+  $('s-task').hidden = !needs;
+  $('s-compose-needs').hidden = !needs;
+  if (needs) {
     $('s-task-text').textContent = s.task || '';
     $('s-phone').hidden = !s.needs_user;
     $('s-link').textContent = s.needs_user?.share_url || '';
@@ -411,10 +601,11 @@ function renderSession() {
   $('s-paused').hidden = s.state !== 'paused';
 
   // The live view shows whatever tab is in front; use it only when that is this session's.
-  const live = s.in_front && Boolean(s.url);
+  const live = s.in_front;
   const interactive = live && ['needs', 'paused', 'done', 'stopped'].includes(s.state);
-  $('s-browser').classList.toggle('mine', interactive);
-  $('s-driving').hidden = !interactive;
+  $('s-browser').classList.toggle('mine', interactive && !needs);
+  $('s-browser').classList.toggle('needs', needs);
+  $('s-driving').hidden = !interactive || needs || s.state === 'paused';
   const tag = $('s-tag');
   tag.className = 'tag' + (live ? ' live' : '');
   tag.lastElementChild.textContent = live ? 'Live' : 'Last screenshot';
@@ -429,18 +620,11 @@ function renderSession() {
   $('s-still-text').textContent = busyElsewhere
     ? `The browser is working on ${title(busyElsewhere)}. The live view comes back when it is done.`
     : 'Showing the last screenshot. Bring this tab to the front to see it live.';
-  const running = s.messages.findLast((m) => m.status === 'running');
-  $('s-doing').hidden = !(live && s.state === 'working' && running);
-  if (running) $('s-doing').lastElementChild.textContent = running.steps.at(-1)?.did || 'Starting…';
   if (live) connectLive(!interactive);
 
-  const thread = $('s-thread');
-  const atBottom = thread.scrollHeight - thread.scrollTop - thread.clientHeight < 40;
-  const open = new Set([...thread.querySelectorAll('details[open]')].map((d) => [...thread.children].indexOf(d.parentElement)));
-  thread.replaceChildren(...s.messages.map(messageEl));
-  open.forEach((index) => thread.children[index]?.querySelector('details')?.setAttribute('open', ''));
-  if (atBottom) thread.scrollTop = thread.scrollHeight;
-  $('reply').placeholder = s.state === 'needs' ? 'e.g. I signed in with Google, carry on' : 'e.g. Now sort by price';
+  renderNow(s, busyElsewhere);
+  renderThread(s);
+  $('reply').placeholder = needs ? 'e.g. I signed in with Google, carry on' : s.state === 'working' || s.state === 'waiting' ? 'Message Cloakroom about this tab…' : 'e.g. Now sort by price';
   $('s-compose-hint').textContent = s.state === 'working' || s.state === 'waiting' ? 'Queues behind what it is doing now.' : 'Same tab, same conversation.';
 }
 
@@ -449,6 +633,7 @@ function connectLive(viewOnly) {
     const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
     rfb = new RFB($('live'), `${scheme}://${location.host}/viewer/websockify`);
     rfb.scaleViewport = true;
+    rfb.background = 'transparent';
     rfb.addEventListener('connect', () => { $('live').dataset.connected = 'true'; });
     rfb.addEventListener('disconnect', () => { $('live').dataset.connected = 'false'; rfb = null; setTimeout(renderSession, 2000); });
   }
@@ -516,10 +701,11 @@ $('groups').addEventListener('click', (event) => {
   if (!item) return;
   selected = item.dataset.session;
   $('s-error').hidden = true;
+  setDrawer(false);
   render();
 });
 
-$('session').addEventListener('click', async (event) => {
+async function onAction(event) {
   const button = event.target.closest('[data-act]');
   const s = current();
   if (!button || !s) return;
@@ -532,7 +718,17 @@ $('session').addEventListener('click', async (event) => {
   }
   button.disabled = true;
   try { await act(button.dataset.act, s); } catch (error) { showError(error); } finally { button.disabled = false; }
+}
+$('session').addEventListener('click', onAction);
+$('convo').addEventListener('click', onAction);
+
+// Remember a list the user opened or closed; otherwise the running steps are open.
+$('s-thread').addEventListener('click', (event) => {
+  const summary = event.target.closest('summary');
+  if (summary) detailsOpen.set(summary.parentElement.dataset.key, !summary.parentElement.open);
 });
+$('s-thread').addEventListener('scroll', () => { if (nearBottom($('s-thread'))) $('jump').hidden = true; });
+$('jump').addEventListener('click', () => toLatest(true));
 
 $('s-compose').addEventListener('submit', async (event) => {
   event.preventDefault();
@@ -542,8 +738,12 @@ $('s-compose').addEventListener('submit', async (event) => {
   try {
     await api('POST', '/v1/chat', { message: text, session: s.session, wait: false });
     $('reply').value = '';
+    threadSession = null;
     await refresh();
   } catch (error) { showError(error); }
+});
+$('reply').addEventListener('keydown', (event) => {
+  if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); $('s-compose').requestSubmit(); }
 });
 
 $('new-form').addEventListener('submit', async (event) => {
@@ -554,6 +754,7 @@ $('new-form').addEventListener('submit', async (event) => {
     const run = await api('POST', '/v1/chat', { message: text, wait: false });
     $('new-message').value = '';
     selected = run.session;
+    setDrawer(false);
     await refresh();
   } catch (error) { selected = null; render(); showError(error); }
 });
@@ -595,6 +796,11 @@ $('sign-out-everywhere').addEventListener('click', async () => {
   await api('POST', '/v1/devices/sign-out-everywhere').catch(showError);
   location.reload();
 });
+
+$('drawer-open').addEventListener('click', () => setDrawer(true));
+$('scrim').addEventListener('click', () => setDrawer(false));
+document.querySelector('[data-open-drawer]').addEventListener('click', () => { setDrawer(true); $('new-message').focus(); });
+document.addEventListener('keydown', (event) => { if (event.key === 'Escape') setDrawer(false); });
 
 window.addEventListener('hashchange', () => { selected = decodeURIComponent(location.hash.slice(1)) || null; render(); });
 listen();

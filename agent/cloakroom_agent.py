@@ -132,7 +132,7 @@ def api_key() -> str:
 
 
 def chat(messages, model, max_tokens=8000, temperature=0.1, json_mode=False):
-    """One completion. Returns (content, cost in USD).
+    """One completion. Returns (content, cost in USD, the model's reasoning text).
 
     DeepSeek's Flash models reason before answering; the reasoning counts against
     max_tokens, so a small budget returns an empty answer.
@@ -165,7 +165,8 @@ def chat(messages, model, max_tokens=8000, temperature=0.1, json_mode=False):
     if not content:
         raise RuntimeError(f"OpenRouter returned no content "
                            f"(finish_reason {payload['choices'][0].get('finish_reason')})")
-    return content, float(payload.get("usage", {}).get("cost") or 0.0)
+    reasoning = payload["choices"][0]["message"].get("reasoning") or ""
+    return content, float(payload.get("usage", {}).get("cost") or 0.0), reasoning
 
 
 def _data_url(path):
@@ -489,7 +490,7 @@ def decide(page, shot, turn, model):
         f"{ACTION_SCHEMA}"
     )
     model_started = time.time()
-    raw, cost = chat(
+    raw, cost, reasoning = chat(
         [{"role": "user", "content": [
             {"type": "text", "text": prompt},
             {"type": "image_url", "image_url": {"url": _data_url(shot)}},
@@ -498,6 +499,7 @@ def decide(page, shot, turn, model):
         json_mode=True,
     )
     turn.last_model_seconds = time.time() - model_started
+    turn.last_reasoning = reasoning
     turn.cost_usd += cost
     try:
         return json.loads(raw)
@@ -662,6 +664,7 @@ class Turn:
         self.dom_blocks = []
         self.last_read = ""
         self.last_model_seconds = 0.0
+        self.last_reasoning = ""
         self.cost_usd = 0.0
         self.cancelled = False
         self.paused = False
@@ -678,12 +681,35 @@ class Turn:
         self.notes_written.append({"site": site, "text": note["text"].strip()})
 
 
-def run_turn(page, turn, on_step):
+def describe(decision):
+    """What an action is about to do, in words a person watching would use."""
+    action = (decision.get("action") or "wait").lower()
+    text = decision.get("text") or ""
+    x, y = decision.get("x"), decision.get("y")
+    return {
+        "open": f"Opening {text} through Bing",
+        "goto": f"Going to {text}",
+        "click": f"Clicking at ({x}, {y})",
+        "type": f"Typing “{text}”",
+        "press": f"Pressing {text}",
+        "scroll": "Scrolling",
+        "hold": f"Pressing and holding at ({x}, {y})",
+        "drag": "Dragging the slider",
+        "back": "Going back",
+        "read": "Reading the page",
+        "save_images": "Saving the photos",
+        "reply": "Writing the reply",
+    }.get(action, "Waiting for the page")
+
+
+def run_turn(page, turn, on_step, on_phase):
     """Work one caller message until the model replies, the step limit, or cancel.
 
-    Returns (status, reply, page). `on_step` is called after every step so the
-    caller can publish progress. While `turn.paused` is set (the user has taken
-    over), the loop holds before its next step.
+    Returns (status, reply, page). `on_step` is called after every step and
+    `on_phase(phase, text, reason)` as each step moves through looking, thinking
+    and acting, so the caller can show progress inside a step that takes a
+    minute. While `turn.paused` is set (the user has taken over), the loop holds
+    before its next step.
     """
     failures = 0
     for step in range(turn.max_steps):
@@ -696,6 +722,7 @@ def run_turn(page, turn, on_step):
         if turn.cancelled:
             return "cancelled", "Cancelled by the caller.", page
         page = usable_page(page, turn)
+        on_phase("looking", "Looking at the page", None)
         shot = os.path.join(turn.shots_dir, f"step-{step:02d}.png")
         started = time.time()
         if not safe_screenshot(page, shot):
@@ -717,6 +744,7 @@ def run_turn(page, turn, on_step):
             turn.dom_blocks = []
         detect_done = time.time()
 
+        on_phase("thinking", "Deciding what to do next", None)
         try:
             decision = decide(page, shot, turn, turn.model)
         except RuntimeError as exc:
@@ -757,6 +785,7 @@ def run_turn(page, turn, on_step):
             "block_type": block_type,
             "dom_blocks": turn.dom_blocks,
             "reason": decision.get("reason"),
+            "thinking": turn.last_reasoning[:4000],
             "screenshot": os.path.relpath(shot, turn.run_dir),
             "seconds": {
                 "screenshot": round(shot_done - started, 1),
@@ -772,6 +801,7 @@ def run_turn(page, turn, on_step):
             record.update(action="reply", text=decision["text"],
                           reason="a password field: only the user signs in")
 
+        on_phase("acting", describe(decision), decision.get("reason"))
         if (decision.get("action") or "").lower() == "reply":
             status = decision.get("status") or "done"
             if status not in ("done", "needs_input", "needs_user", "failed"):
@@ -819,7 +849,7 @@ def reflect(turn, status, reply):
         f'{{"notes": [{{"site": "<domain>", "text": "..."}}]}}, or {{"notes": []}} '
         f"if there is nothing new."
     )
-    raw, cost = chat([{"role": "user", "content": prompt}], model=turn.model, json_mode=True)
+    raw, cost, _reasoning = chat([{"role": "user", "content": prompt}], model=turn.model, json_mode=True)
     turn.cost_usd += cost
     try:
         notes = json.loads(raw).get("notes") or []

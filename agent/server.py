@@ -293,9 +293,11 @@ class Session:
             messages.append({"from": "you", "text": run.message, "time": run.started})
             messages.append({
                 "from": "cloakroom", "run": run.id, "status": run.status, "paused": run.paused,
+                "phase": view["phase"],
                 "text": run.reply, "time": run.finished, "cost_usd": view["cost_usd"],
                 "files": view["files"], "max_steps": run.max_steps,
                 "steps": [{"observation": step.get("observation"), "did": step.get("did"),
+                           "reason": step.get("reason"), "thinking": step.get("thinking"),
                            "seconds": round(sum((step.get("seconds") or {}).values()), 1)}
                           for step in view.get("trace", [])],
             })
@@ -328,6 +330,7 @@ class Run:
         self.final_url = None
         self.needs_user = None
         self.paused = False
+        self.phase = None
         self.error = None
         self.started = now()
         self.finished = None
@@ -355,6 +358,7 @@ class Run:
             "final_url": self.final_url,
             "needs_user": self.needs_user,
             "paused": self.paused,
+            "phase": self.phase if self.status == "running" else None,
             "steps": len(turn.steps) if turn else 0,
             "sites": turn.sites if turn else [],
             "blocks": turn.blocks_seen if turn else [],
@@ -643,6 +647,11 @@ class Cloakroom:
                             step=step_event(run, turn.steps[-1]), files=files,
                             cost_usd=round(turn.cost_usd, 5))
 
+    def _phase(self, run, phase, text, reason):
+        """Where a step is (looking, thinking, acting), so a slow step still shows progress."""
+        run.phase = {"phase": phase, "text": text, "reason": reason, "since_ms": int(time.time() * 1000)}
+        self.events.publish("run.phase", run=run.id, session=run.session.id, **run.phase)
+
     def _expire_sessions(self):
         cutoff = time.time() - SESSION_IDLE_SECONDS
         with self.lock:
@@ -677,6 +686,8 @@ class Cloakroom:
         self.front = session.id
 
         run.status = "running"
+        run.phase = {"phase": "starting", "text": "Getting the tab ready", "reason": None,
+                     "since_ms": int(time.time() * 1000)}
         self.events.publish("run.started", run=run.id, session=session.id)
         turn = agent.Turn(run.id, context, run.message, list(session.conversation), self.notebook,
                           run.dir, run.max_steps, agent.DEFAULT_MODEL)
@@ -687,7 +698,8 @@ class Cloakroom:
         turn.paused = run.paused
         run.persist()
 
-        status, reply, page = agent.run_turn(page, turn, lambda _turn: self._stepped(run))
+        status, reply, page = agent.run_turn(page, turn, lambda _turn: self._stepped(run),
+                                             lambda phase, text, reason: self._phase(run, phase, text, reason))
         session.page = page
         run.final_url = page.url
         session.url = page.url

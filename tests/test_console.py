@@ -151,7 +151,22 @@ def step_count(page):
     steps = page.get_by_test_id("steps").last
     if not steps.count():
         return 0
-    return int(re.match(r"\d+", steps.locator("summary").inner_text()).group(0))
+    return int(re.match(r"\d+", steps.locator(":scope > summary").inner_text()).group(0))
+
+
+def assert_on_screen(page, locator):
+    """The bottom of `locator` is inside the window: the newest thing shows without scrolling."""
+    box = locator.bounding_box()
+    height = page.viewport_size["height"]
+    assert box and 0 <= box["y"] + box["height"] <= height + 1, f"off screen: {box} in a window {height}px tall"
+
+
+def assert_latest_in_view(page):
+    """The page itself never scrolls; the live view, the newest message and the reply box are all in sight."""
+    assert page.evaluate("document.scrollingElement.scrollHeight <= innerHeight"), "the page scrolls"
+    assert_on_screen(page, page.locator("#live:not([hidden]), #still:not([hidden]), #blank:not([hidden])").first)
+    assert_on_screen(page, page.locator("[data-testid=message-you], [data-testid=message-cloakroom]").last)
+    assert_on_screen(page, page.get_by_test_id("reply"))
 
 
 # ---------------------------------------------------------------- the link
@@ -218,20 +233,29 @@ def test_new_session_runs_to_a_reply_with_steps_and_a_live_view(page):
     expect(list_item(page, session)).to_be_visible()
     expect(status(page)).to_have_text(re.compile("Waiting its turn|Working"), timeout=30000)
 
-    expect(page.get_by_test_id("live-view")).to_be_visible(timeout=RUN_TIMEOUT)
+    # Progress inside the first step: what it is doing, for how long, and the live tab.
+    now = page.get_by_test_id("now")
+    expect(now).to_be_visible(timeout=RUN_TIMEOUT)
+    expect(cloakroom_messages(page).last).to_have_attribute(
+        "data-phase", re.compile("starting|looking|thinking|acting"))
+    expect(now.locator(".elapsed")).to_have_text(re.compile(r"^\d+s$"), timeout=5000)
+    expect(page.get_by_test_id("live-view")).to_be_visible()
     expect(page.get_by_test_id("live-view")).to_have_attribute("data-connected", "true", timeout=30000)
     expect(page.get_by_test_id("live-view")).to_have_attribute("data-view-only", "true")
 
     expect(status(page)).to_have_text("Finished", timeout=RUN_TIMEOUT)
     expect(page.get_by_test_id("session-title")).to_have_text("example.com")
+    expect(now).to_contain_text("Finished")
+    assert_latest_in_view(page)
     # What the model says varies; the console's job is to show it.
     expect(cloakroom_messages(page).last.locator(".bubble")).to_contain_text(re.compile("example|domain", re.I))
     assert step_count(page) >= 1
     steps = page.get_by_test_id("steps").last
     if not steps.evaluate("details => details.open"):
-        steps.locator("summary").click()
+        steps.locator(":scope > summary").click()
     expect(steps.locator("li").first).to_be_visible()
-    steps.locator("summary").click()
+    expect(steps.locator(".why").first).to_contain_text("Why:")
+    steps.locator(":scope > summary").click()
     expect(steps.locator("li").first).to_be_hidden()
 
     item = list_item(page, session)
@@ -329,6 +353,8 @@ def test_a_sign_in_hands_off_with_a_session_link_that_opens_anywhere(browser, pa
         re.compile("Waiting its turn|Working"), timeout=30000)
     expect(phone_page.get_by_test_id("session-status")).to_have_text("Needs you", timeout=RUN_TIMEOUT)
     expect(phone_page.get_by_test_id("message-cloakroom")).to_have_count(2)
+    assert_on_screen(phone_page, phone_page.get_by_test_id("message-cloakroom").last)
+    assert_on_screen(phone_page, phone_page.get_by_test_id("reply"))
     phone.close()
     expect(status(page)).to_have_text("Needs you")
 

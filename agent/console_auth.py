@@ -223,8 +223,7 @@ FIELDS = """<label for="password">{label}</label>
   }}
   const password = document.getElementById('password'), again = document.getElementById('again');
   const bar = document.getElementById('meter-bar'), words = document.getElementById('meter-words');
-  const match = document.getElementById('match'), form = password.form;
-  const button = form.querySelector('button[type=submit]'), hint = words.textContent;
+  const match = document.getElementById('match'), hint = words.textContent;
   function update() {{
     const empty = !password.value && !again.value && !password.required;
     const [score, text] = strength(password.value);
@@ -235,11 +234,12 @@ FIELDS = """<label for="password">{label}</label>
     const same = password.value === again.value;
     match.textContent = !again.value ? '' : same ? '✓ The passwords match' : 'The passwords don’t match yet';
     match.className = 'hint ' + (same ? 'good' : 'bad');
-    button.disabled = !empty && (score < MIN_STRENGTH || !same);
+    // Looked up here: this script runs before the form's button is parsed.
+    password.form.querySelector('button[type=submit]').disabled = !empty && (score < MIN_STRENGTH || !same);
   }}
   password.addEventListener('input', update);
   again.addEventListener('input', update);
-  update();
+  document.addEventListener('DOMContentLoaded', update);
 }})();
 </script>"""
 
