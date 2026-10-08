@@ -72,7 +72,7 @@ def check_site(context, smoke, site, notebook, has_key):
             run_dir = os.path.join(smoke.dir, "work", site)
             turn = agent.Turn(f"{smoke.id}-{site}", context, CHALLENGE_MESSAGE, [], notebook,
                               run_dir, CHALLENGE_STEPS, agent.DEFAULT_MODEL)
-            _, _, landed = agent.run_turn(landed, turn, lambda _turn: None)
+            _, _, landed = agent.run_turn(landed, turn, lambda _turn: None, lambda *_phase: None)
             humanize.pause(2.0, 3.0)
             blocks = agent.detect_block(landed)
         result["blocked_by"] = blocks

@@ -134,7 +134,7 @@ def step_count(page):
     steps = page.get_by_test_id("steps").last
     if not steps.count():
         return 0
-    return int(re.match(r"\d+", steps.locator("summary").inner_text()).group(0))
+    return int(re.match(r"\d+", steps.locator(":scope > summary").inner_text()).group(0))
 
 
 # ---------------------------------------------------------------- the link
@@ -167,7 +167,13 @@ def test_new_session_runs_to_a_reply_with_steps_and_a_live_view(page):
     expect(list_item(page, session)).to_be_visible()
     expect(status(page)).to_have_text(re.compile("Waiting its turn|Working"), timeout=30000)
 
-    expect(page.get_by_test_id("live-view")).to_be_visible(timeout=RUN_TIMEOUT)
+    # Progress inside the first step: what it is doing, for how long, and the live tab.
+    now = page.get_by_test_id("now")
+    expect(now).to_be_visible(timeout=RUN_TIMEOUT)
+    expect(cloakroom_messages(page).last).to_have_attribute(
+        "data-phase", re.compile("starting|looking|thinking|acting"))
+    expect(now.locator(".elapsed")).to_have_text(re.compile(r"^\d+s$"), timeout=5000)
+    expect(page.get_by_test_id("live-view")).to_be_visible()
     expect(page.get_by_test_id("live-view")).to_have_attribute("data-connected", "true", timeout=30000)
     expect(page.get_by_test_id("live-view")).to_have_attribute("data-view-only", "true")
 
@@ -178,9 +184,10 @@ def test_new_session_runs_to_a_reply_with_steps_and_a_live_view(page):
     assert step_count(page) >= 1
     steps = page.get_by_test_id("steps").last
     if not steps.evaluate("details => details.open"):
-        steps.locator("summary").click()
+        steps.locator(":scope > summary").click()
     expect(steps.locator("li").first).to_be_visible()
-    steps.locator("summary").click()
+    expect(steps.locator(".why").first).to_contain_text("Why:")
+    steps.locator(":scope > summary").click()
     expect(steps.locator("li").first).to_be_hidden()
 
     item = list_item(page, session)

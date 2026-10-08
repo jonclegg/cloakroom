@@ -96,7 +96,7 @@ button, input, textarea { font: inherit; color: inherit; }
 .screen .over { position: absolute; left: 12px; bottom: 12px; right: auto; top: auto; width: auto; height: auto; display: inline-flex; align-items: center; gap: 8px; padding: 7px 11px; border-radius: 8px; background: rgba(10,11,14,.9); border: 1px solid var(--line); font-size: 12px; }
 .screen .over .dot { background: var(--accent); animation: pulse 1.2s ease-in-out infinite; }
 @keyframes pulse { 50% { opacity: .3; } }
-@media (prefers-reduced-motion: reduce) { .screen .over .dot { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .screen .over .dot, .now .what .dot { animation: none; } }
 .still-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 9px 12px; border-top: 1px solid var(--line); font-size: 13px; color: var(--muted); }
 
 .chat { flex: 1 1 340px; min-width: 0; border-radius: 12px; border: 1px solid var(--line); background: var(--panel); display: flex; flex-direction: column; }
@@ -113,6 +113,16 @@ details.steps { width: 94%; font-size: 13px; }
 details.steps summary { cursor: pointer; color: var(--muted); font-size: 12px; padding: 2px 0; }
 details.steps ol { margin: 6px 0 0; padding: 0 0 0 22px; display: flex; flex-direction: column; gap: 6px; color: var(--soft); }
 details.steps .did { display: block; font: 12px var(--mono); color: var(--muted); overflow-wrap: anywhere; }
+details.steps .why { display: block; font-size: 12px; color: var(--soft); margin-top: 2px; }
+details.steps .why b, .now .why b { color: var(--muted); font-weight: 600; }
+details.thinking { margin-top: 4px; }
+details.thinking summary { font-size: 12px; }
+details.thinking div { margin-top: 4px; padding: 8px 10px; border-radius: 6px; background: var(--ground); border: 1px solid var(--line-soft); font-size: 12px; color: var(--muted); white-space: pre-wrap; max-height: 16rem; overflow: auto; }
+.now { display: flex; flex-direction: column; gap: 4px; }
+.now .what { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+.now .what .dot { background: var(--accent); animation: pulse 1.2s ease-in-out infinite; }
+.now .why { font-size: 13px; color: var(--soft); }
+.elapsed { font: 12px var(--mono); color: var(--muted); font-weight: 400; }
 .files { display: flex; gap: 6px; flex-wrap: wrap; max-width: 94%; }
 .files a { font-size: 12px; padding: 3px 8px; border-radius: 6px; background: var(--ok-wash); color: var(--ok-ink); text-decoration: none; }
 .compose { margin-top: auto; padding: 12px 16px 16px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 8px; }
@@ -321,7 +331,26 @@ function messageEl(m) {
   const bubble = document.createElement('div'); bubble.className = 'bubble';
   if (m.from === 'you') bubble.textContent = m.text;
   else if (m.status === 'queued') bubble.textContent = 'Waiting for the browser. Cloakroom works on one session at a time.';
-  else if (m.status === 'running') bubble.textContent = m.paused ? 'Holding while you drive.' : 'Working on it…';
+  else if (m.status === 'running' && m.paused) bubble.textContent = 'Holding while you drive.';
+  else if (m.status === 'running') {
+    const phase = m.phase || { phase: 'starting', text: 'Getting the tab ready' };
+    el.dataset.phase = phase.phase;
+    bubble.className = 'bubble now';
+    bubble.dataset.testid = 'now';
+    const what = document.createElement('span'); what.className = 'what';
+    what.innerHTML = '<span class="dot"></span><span></span>';
+    what.lastElementChild.textContent = phase.text + '…';
+    const elapsed = document.createElement('span'); elapsed.className = 'elapsed';
+    if (phase.since_ms) elapsed.dataset.since = phase.since_ms;
+    what.append(elapsed);
+    bubble.append(what);
+    if (phase.reason) {
+      const why = document.createElement('span'); why.className = 'why';
+      why.innerHTML = '<b>Why:</b> ';
+      why.append(phase.reason);
+      bubble.append(why);
+    }
+  }
   else bubble.textContent = m.text || '(no reply)';
   el.append(who, bubble);
   if (m.files?.length) {
@@ -343,6 +372,19 @@ function messageEl(m) {
       const did = document.createElement('span'); did.className = 'did';
       did.textContent = `${step.did || ''}${step.seconds ? ` · ${step.seconds}s` : ''}`;
       li.append(did);
+      if (step.reason) {
+        const why = document.createElement('span'); why.className = 'why';
+        why.innerHTML = '<b>Why:</b> ';
+        why.append(step.reason);
+        li.append(why);
+      }
+      if (step.thinking) {
+        const thinking = document.createElement('details'); thinking.className = 'thinking';
+        const summary = document.createElement('summary'); summary.textContent = 'The model’s reasoning';
+        const text = document.createElement('div'); text.textContent = step.thinking;
+        thinking.append(summary, text);
+        li.append(thinking);
+      }
       list.append(li);
     }
     details.append(summary, list);
@@ -385,7 +427,7 @@ function renderSession() {
   $('s-paused').hidden = s.state !== 'paused';
 
   // The live view shows whatever tab is in front; use it only when that is this session's.
-  const live = s.in_front && Boolean(s.url);
+  const live = s.in_front;
   const interactive = live && ['needs', 'paused', 'done', 'stopped'].includes(s.state);
   $('s-browser').classList.toggle('mine', interactive);
   $('s-driving').hidden = !interactive;
@@ -405,7 +447,7 @@ function renderSession() {
     : 'Showing the last screenshot. Bring this tab to the front to see it live.';
   const running = s.messages.findLast((m) => m.status === 'running');
   $('s-doing').hidden = !(live && s.state === 'working' && running);
-  if (running) $('s-doing').lastElementChild.textContent = running.steps.at(-1)?.did || 'Starting…';
+  if (running) $('s-doing').lastElementChild.textContent = (running.phase?.text || 'Getting the tab ready') + '…';
   if (live) connectLive(!interactive);
 
   const thread = $('s-thread');
@@ -414,6 +456,7 @@ function renderSession() {
   thread.replaceChildren(...s.messages.map(messageEl));
   open.forEach((index) => thread.children[index]?.querySelector('details')?.setAttribute('open', ''));
   if (atBottom) thread.scrollTop = thread.scrollHeight;
+  tick();
   $('reply').placeholder = s.state === 'needs' ? 'e.g. I signed in with Google, carry on' : 'e.g. Now sort by price';
   $('s-compose-hint').textContent = s.state === 'working' || s.state === 'waiting' ? 'Queues behind what it is doing now.' : 'Same tab, same conversation.';
 }
@@ -531,6 +574,14 @@ $('new-form').addEventListener('submit', async (event) => {
     await refresh();
   } catch (error) { selected = null; render(); showError(error); }
 });
+
+function tick() {
+  for (const el of document.querySelectorAll('[data-since]')) {
+    const seconds = Math.max(0, Math.round((Date.now() - Number(el.dataset.since)) / 1000));
+    el.textContent = seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+  }
+}
+setInterval(tick, 1000);
 
 window.addEventListener('hashchange', () => { selected = decodeURIComponent(location.hash.slice(1)) || null; render(); });
 listen();

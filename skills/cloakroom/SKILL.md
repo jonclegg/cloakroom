@@ -123,7 +123,10 @@ browser beside its conversation. From it the user can start a session, message o
 to a busy session queues behind its run), **Take over** a working run (it holds after its
 current step and the live view takes their clicks), **Hand back**, **Stop**, press **Done,
 carry on** on one that needs them, **Show it live** for a tab that is in the background, and
-**Close** a session. It updates live from the event stream. Opening the link sets a cookie and
+**Close** a session. It updates live from the event stream. While a session works, its message
+shows what the current step is doing (looking at the page, thinking, or the action it chose),
+the model's reason, and how long it has taken; each finished step keeps its reason and the
+model's reasoning text. Opening the link sets a cookie and
 drops the key from the address bar.
 
 `url` is a secret capability link. Anyone with it can control the logged-in browser. Tell the user that when you send it. When they are done, run `cloakroom unshare`: the link and the cookie it set stop working. A new share gets a new link. `cloakroom status --json` includes `share_url` while the tunnel is running (`null` when it is not).
@@ -255,7 +258,8 @@ once nobody needs the viewer.
 every state change, in order: `run.queued`, `run.started`, `run.step` (the step, its
 screenshot URL, and any files it saved), `run.finished` (status, reply, files, cost),
 `run.cancel_requested`, `session.created`, `session.expired`, `session.tab_lost`,
-`run.paused`, `run.resumed`, `session.focused`, `session.closed`, `browser.connected`,
+`run.phase` (looking, thinking or acting, inside a step), `run.paused`, `run.resumed`,
+`session.focused`, `session.closed`, `browser.connected`,
 `share.started`, `share.stopped`, `smoke.*` and `key.*`. `?run=<id>` or `?session=<id>` narrows it. To
 resume after a dropped connection, send the last `id` back as `Last-Event-ID` (or
 `?since=<id>`); if events were missed (the server restarted, or the reader fell more than
