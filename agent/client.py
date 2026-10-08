@@ -128,7 +128,7 @@ def main():
     smoke.add_argument("sites", nargs="*", help="domains (default: amazon.com walmart.com target.com bestbuy.com)")
     smoke.add_argument("--json", action="store_true")
 
-    share = commands.add_parser("share", help="a private HTTPS link to the viewer")
+    share = commands.add_parser("share", help="a private HTTPS link to the console")
     share.add_argument("--json", action="store_true")
 
     unshare = commands.add_parser("unshare", help="stop the share link")
@@ -210,7 +210,8 @@ def main():
             return 0
         if link["reused"]:
             print("Already sharing. This link stays the same until you unshare.")
-        print(f"{link['url']}\n\n{SHARE_WARNING}\nIt can take a few seconds before the link loads.\n"
+        print(f"{link['url']}\n\nThe Cloakroom console: every session, the live browser, and what needs you.\n"
+              f"{SHARE_WARNING}\nIt can take a few seconds before the link loads.\n"
               "Stop it with: cloakroom unshare\nThe link changes every time you start a new share.")
         return 0
 

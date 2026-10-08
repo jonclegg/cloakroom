@@ -18,7 +18,8 @@ Usage: cloakroom <command> [--json]
   start          Start the stealth browser.
   stop           Stop it (the profile is kept).
   status         Is it ready, and the viewer, CDP, and share URLs.
-  share          Private HTTPS link to the viewer. No confirmation.
+  share          Private HTTPS link to the console: every session and the
+                 live browser. No confirmation.
   unshare        Stop that link.
   chat "<msg>"   Talk to Cloakroom; it works the browser with DeepSeek and
                  replies. --session <id> continues the same tab and conversation.

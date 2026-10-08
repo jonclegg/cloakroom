@@ -664,6 +664,7 @@ class Turn:
         self.last_model_seconds = 0.0
         self.cost_usd = 0.0
         self.cancelled = False
+        self.paused = False
         os.makedirs(self.shots_dir, exist_ok=True)
         os.makedirs(self.files_dir, exist_ok=True)
 
@@ -681,10 +682,17 @@ def run_turn(page, turn, on_step):
     """Work one caller message until the model replies, the step limit, or cancel.
 
     Returns (status, reply, page). `on_step` is called after every step so the
-    caller can publish progress.
+    caller can publish progress. While `turn.paused` is set (the user has taken
+    over), the loop holds before its next step.
     """
     failures = 0
     for step in range(turn.max_steps):
+        if turn.paused:
+            # The user took over the browser. Hold here, then look again.
+            while turn.paused and not turn.cancelled:
+                time.sleep(0.5)
+            turn.memory.append("The user took over the browser for a while: the page may have "
+                               "changed, so look at it again before acting.")
         if turn.cancelled:
             return "cancelled", "Cancelled by the caller.", page
         page = usable_page(page, turn)

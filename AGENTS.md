@@ -58,7 +58,7 @@ On Windows there is no `cloakroom` command on the host. Use `docker exec cloakro
 cloakroom status --json          # is it ready, viewer and API URLs, key set?
 cloakroom start                  # if not ready
 cloakroom chat "<message>"       # Cloakroom drives the browser with DeepSeek and replies
-cloakroom share --json           # remote viewer link; send the url immediately
+cloakroom share --json           # console link (sessions + live browser); send the url immediately
 cloakroom unshare                # stop the share when they are done
 ```
 
@@ -70,9 +70,9 @@ cloakroom unshare                # stop the share when they are done
 
 If a site asks for a two-factor code, **you** get it (for example from Messages) and type it into the page. Cloakroom does not read texts.
 
-When the user wants the viewer on a phone, away from home, or any remote access, run `cloakroom share` and send the HTTPS URL in the same turn. Do not ask them to confirm first; the command does not prompt. The URL is a secret capability link: anyone who has it can control the logged-in browser. When they're done, run `cloakroom unshare`. Do **not** use Tailscale, Funnel, or port forwarding. Never expose port 9222. `cloakroom share` tunnels only the viewer (6080), and ports 6080, 8423 and 9222 stay bound to `127.0.0.1`.
+When the user wants to watch Cloakroom, see what its sessions are doing, or reach the browser from a phone or anywhere else, run `cloakroom share` and send the HTTPS URL in the same turn. Do not ask them to confirm first; the command does not prompt. The link opens the **Cloakroom console**: every session with its status and conversation, the live browser, what needs them, and buttons to message a session, take over the mouse, hand back, stop, or close it. The URL is a secret capability link: anyone who has it can control the logged-in browser. When they're done, run `cloakroom unshare`; the link and every page opened from it stop working. Do **not** use Tailscale, Funnel, or port forwarding. Never expose port 9222. `cloakroom share` tunnels the console (the API on 8423, which serves the live viewer itself), never CDP, and ports 6080, 8423 and 9222 stay bound to `127.0.0.1`.
 
-**When a run ends `needs_user`**, the page needs the user's own hands: a sign-in, a payment, or a bot check Cloakroom couldn't clear. Cloakroom has already started the share. Send the user `needs_user.task` and `needs_user.share_url` in the same turn, and say the link is secret. Don't assume they're at the machine running Cloakroom. When they say they're done, continue with `--session <id>` (same tab, now signed in), and run `cloakroom unshare` once nobody needs the viewer. Do the same yourself, with `cloakroom share --json`, whenever the user has to act in the page while you drive it over CDP.
+**When a run ends `needs_user`**, the page needs the user's own hands: a sign-in, a payment, or a bot check Cloakroom couldn't clear. Cloakroom has already started the share. Send the user `needs_user.task` and `needs_user.share_url` in the same turn, and say the link is secret. The link opens the console on that session: they act in the live browser there and press **Done, carry on**, which continues the session for you (watch `run.finished` on `GET /v1/events?session=<id>`, or the session's next reply). Don't assume they're at the machine running Cloakroom. If they tell you they're done instead, continue with `--session <id>` (same tab, now signed in). Run `cloakroom unshare` once nobody needs the console. Do the same yourself, with `cloakroom share --json`, whenever the user has to act in the page while you drive it over CDP.
 
 Never ask the user for a password in chat. They type it in the viewer, through the share URL. Always send the share URL, not the localhost viewer address: the user is usually not at the machine running Cloakroom. If they're away and need to paste the OpenRouter key, run `cloakroom key --in-browser` and `cloakroom share`, and they paste it in the viewer.
 

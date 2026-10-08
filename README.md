@@ -29,12 +29,12 @@ That's it. Your agent will:
 
 Ask your agent to do things on websites "with Cloakroom", for example: *"With Cloakroom, find a 12-cup coffee maker under $50 on Walmart."* Cloakroom drives a real browser on your computer, works through bot checks, and remembers your logins between sessions.
 
-Watch it work at http://127.0.0.1:6080, or ask your agent to share a link so you can watch from your phone.
+Ask your agent to share a link to the Cloakroom console: every session it is running, the live browser, and anything that needs you, from your phone or any computer.
 
 ## Good to know
 
 - **Sign in yourself.** When a site needs a password, Cloakroom stops and your agent sends you a private link to the browser, so you can sign in from your phone or any computer. Don't paste passwords into the chat. Your agent can type in texted sign-in codes for you.
-- **It runs on your computer.** Traffic leaves from your own internet connection, and nothing is reachable from outside unless you share the viewer link. Anyone who has that link can control your logged-in browser, so keep it private.
+- **It runs on your computer.** Traffic leaves from your own internet connection, and nothing is reachable from outside unless you share the console link. Anyone who has that link can control your logged-in browser, so keep it private.
 - **The details** for agents and the curious are in [AGENTS.md](AGENTS.md) and [the agent guide](skills/cloakroom/SKILL.md). The browser is [CloakBrowser](https://github.com/CloakHQ/CloakBrowser), run from [this fork](https://github.com/jonclegg/CloakBrowser/tree/cloakroom-fixes).
 
 ## License

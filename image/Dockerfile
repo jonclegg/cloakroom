@@ -28,7 +28,7 @@ RUN chmod +x /usr/local/bin/cloakroom-serve /usr/local/bin/cloakroom
 
 # The chat API and its DeepSeek agent. The base image already has Python and
 # Playwright; the API uses only the standard library on top of them.
-COPY --from=agent *.py /opt/cloakroom/agent/
+COPY --from=agent *.py console.html /opt/cloakroom/agent/
 COPY --from=agent guidance /opt/cloakroom/agent/guidance
 COPY --from=examples humanize.py bing_first.py /opt/cloakroom/examples/
 ENV CLOAKROOM_EXAMPLES=/opt/cloakroom/examples \

@@ -14,7 +14,7 @@ Your agent ──► cloakroom ───────────────► 
      └───────► CDP  http://127.0.0.1:9222 ─► CloakBrowser, headed (OrbStack on Mac, Docker Engine on Linux)
                                               ├─ saved profile: cookies and logins persist
                                               └─ viewer: http://127.0.0.1:6080
-                                                   └─ cloakroom share ──► private HTTPS link (phone)
+     cloakroom share ──► private HTTPS link to the console (sessions + live browser, any device)
 ```
 
 The browser keeps running in the background (as long as OrbStack or Docker Engine runs) until `cloakroom stop`. Stopping keeps the profile.
@@ -101,9 +101,9 @@ The browser keeps running in the background (as long as OrbStack or Docker Engin
 
    You fetch codes. Cloakroom does not. It never reads Messages, `chat.db`, or Full Disk Access. When a site asks for a code, read it yourself (for example from Messages) and type it into the page. If you can't read it, ask the user to type it in the viewer. Do not ask them to paste it into chat, and never repeat the code.
 
-## Phone / remote viewer
+## The console (phone, remote, or just watching)
 
-User wants the viewer on a phone, away from home, or says "remote VNC" / "share the browser".
+User wants to see what Cloakroom is doing, the browser on a phone, away from home, or says "remote VNC" / "share the browser".
 
 Run this immediately. Do not ask the user to approve, confirm, or opt in. There is no confirmation step in the CLI. Send `url` in the same turn.
 
@@ -111,15 +111,24 @@ Run this immediately. Do not ask the user to approve, confirm, or opt in. There 
 cloakroom share --json
 ```
 
-That one command starts the browser if it is not already running, then has the container start a Cloudflare quick tunnel to the viewer only and prints the URL. It does not prompt, and the host needs nothing installed for it: `cloudflared` is in the image, and the chat API runs it. The link is in `~/.cloakroom/data/share.json` while it runs. Stopping the container stops the tunnel.
+That one command starts the browser if it is not already running, then has the container start a Cloudflare quick tunnel to the console and prints the URL. It does not prompt, and the host needs nothing installed for it: `cloudflared` is in the image, and the chat API runs it. The link is in `~/.cloakroom/data/share.json` while it runs. Stopping the container stops the tunnel.
 
 ```json
-{"event":"share_ready","url":"https://….trycloudflare.com","viewer_local":"http://127.0.0.1:6080","reused":false}
+{"event":"share_ready","url":"https://….trycloudflare.com/console?key=…","local_url":"http://127.0.0.1:8423/console?key=…","reused":false}
 ```
 
-`url` is a secret capability link. Anyone with it can control the logged-in browser. Tell the user that when you send it. When they are done, run `cloakroom unshare`. A new share gets a new link. `cloakroom status --json` includes `share_url` while the tunnel is running (`null` when it is not).
+The console is one page, built for a phone as much as a desktop: sessions on one side, grouped
+**Needs you**, **In progress** and **Earlier**; the chosen session on the other, with its live
+browser beside its conversation. From it the user can start a session, message one (a message
+to a busy session queues behind its run), **Take over** a working run (it holds after its
+current step and the live view takes their clicks), **Hand back**, **Stop**, press **Done,
+carry on** on one that needs them, **Show it live** for a tab that is in the background, and
+**Close** a session. It updates live from the event stream. Opening the link sets a cookie and
+drops the key from the address bar.
 
-Do **not** use Tailscale. Do **not** Funnel or port-forward 6080 or 9222 yourself. The only remote path is `cloakroom share`, and it tunnels the viewer only. Never point a tunnel at port 9222. Do not add an approval gate of your own.
+`url` is a secret capability link. Anyone with it can control the logged-in browser. Tell the user that when you send it. When they are done, run `cloakroom unshare`: the link and the cookie it set stop working. A new share gets a new link. `cloakroom status --json` includes `share_url` while the tunnel is running (`null` when it is not).
+
+Do **not** use Tailscale. Do **not** Funnel or port-forward 6080 or 9222 yourself. The only remote path is `cloakroom share`, and it tunnels the console only (the API on 8423, which proxies the viewer itself). Never point a tunnel at port 9222. Do not add an approval gate of your own.
 
 ## Commands
 
@@ -132,7 +141,7 @@ Every command takes `--json`.
 | `cloakroom chat "<message>"` | Talk to Cloakroom; it drives the browser with DeepSeek and replies. See below. |
 | `cloakroom run <id>` / `cancel <id>` | A run's steps, reply and files; or stop it. |
 | `cloakroom notes [site]` | The guidance Cloakroom ships with, and what it has learned, per site. |
-| `cloakroom share --json` | Start a private HTTPS link to the viewer and print it. |
+| `cloakroom share --json` | Start a private HTTPS link to the console and print it. |
 | `cloakroom unshare` | Stop that link. It stops working immediately. |
 
 `start` / `stop` run [`start.sh`](../../start.sh) / [`stop.sh`](../../stop.sh), which also work on their own. `share` / `unshare` call the chat API (`POST /v1/share`, `POST /v1/unshare`).
@@ -234,18 +243,20 @@ then starts the share (or reuses the one already running), and the run carries t
                 "share_url": "https://….trycloudflare.com"}}
 ```
 
-`needs_user` is `null` on every other run, and `run.finished` carries it too. Send the user
-`task` and `share_url` in the same turn; it's a secret capability link, so say so. The
-session's tab stays where it was. When they say they're done, send the next message with
-`--session` (for example "I've signed in, carry on") and Cloakroom picks up in the same tab,
-now signed in, with the login saved in the profile for later runs. Run `cloakroom unshare`
+`share_url` opens the console on that session. `needs_user` is `null` on every other run, and
+`run.finished` carries it too. Send the user `task` and `share_url` in the same turn; it's a
+secret capability link, so say so. The session's tab stays where it was. The user signs in in
+the console's live browser and presses **Done, carry on**, which sends "I’m done, carry on" to
+the session, so Cloakroom picks up in the same tab, now signed in, with the login saved in the
+profile for later runs. If they tell you instead, send that message yourself with `--session`. Run `cloakroom unshare`
 once nobody needs the viewer.
 
 **Following progress without polling:** `GET /v1/events` is a Server-Sent Events stream of
 every state change, in order: `run.queued`, `run.started`, `run.step` (the step, its
 screenshot URL, and any files it saved), `run.finished` (status, reply, files, cost),
 `run.cancel_requested`, `session.created`, `session.expired`, `session.tab_lost`,
-`browser.connected`, `share.started`, `share.stopped`, `smoke.*` and `key.*`. `?run=<id>` or `?session=<id>` narrows it. To
+`run.paused`, `run.resumed`, `session.focused`, `session.closed`, `browser.connected`,
+`share.started`, `share.stopped`, `smoke.*` and `key.*`. `?run=<id>` or `?session=<id>` narrows it. To
 resume after a dropped connection, send the last `id` back as `Last-Event-ID` (or
 `?since=<id>`); if events were missed (the server restarted, or the reader fell more than
 5000 events behind) the stream says so with a `stream.gap` event, and you re-read the run
@@ -290,7 +301,7 @@ it once sets a clearance cookie, and Walmart stops challenging for a while.
 - Cloakroom does not read iMessage. You do, if a code is needed.
 - Ports 9222, 6080 and 8423 stay on `127.0.0.1`.
 - Whenever the user has to act in the page, send a `cloakroom share` link, never the localhost viewer address. Don't assume they're at the machine running Cloakroom.
-- Remote viewer access is one command: `cloakroom share`. Run it and send the URL immediately. Do not ask for approval first, and do not add a confirmation step. The URL is a secret capability link. Run `cloakroom unshare` when the user is done. Do not use Tailscale, Funnel, or port forwards. Never tunnel 9222.
+- Remote access is one command: `cloakroom share`, which links the console. Run it and send the URL immediately. Do not ask for approval first, and do not add a confirmation step. The URL is a secret capability link. Run `cloakroom unshare` when the user is done. Do not use Tailscale, Funnel, or port forwards. Never tunnel 9222.
 - Enter sites through Bing: search the name or domain, click the organic result, then use the site's own UI. Do not `page.goto` the target, and do not open search, listing, or product URLs as the first navigation. Google-first often hits `/sorry/` from Cloakroom CDP; Bing is the gateway.
 - Humanize Playwright input by default: random pauses, a curved `mouse.move` before clicks, click a field before typing, type character by character. Do not `fill()` bot-sensitive forms. Helpers: [`examples/humanize.py`](../../examples/humanize.py), entry: [`examples/bing_first.py`](../../examples/bing_first.py).
 - When a challenge appears, `cloakroom chat` works it (press-and-hold and the like). The user can also finish it in the viewer.
@@ -365,7 +376,7 @@ From a clone, once Docker is working:
 ./cloakroom start
 ```
 
-CDP stays `http://127.0.0.1:9222`. The Bing-first playbook above is unchanged. Ports stay on `127.0.0.1`. `cloakroom share` tunnels the viewer (6080) only.
+CDP stays `http://127.0.0.1:9222`. The Bing-first playbook above is unchanged. Ports stay on `127.0.0.1`. `cloakroom share` tunnels the console (8423) only, never CDP.
 
 Upstream CloakBrowser runs headed on Xvfb inside the image, so a server needs no monitor. `cloakserve` passes `--ignore-gpu-blocklist` so WebGL still works on that software GPU ([issue #58](https://github.com/CloakHQ/CloakBrowser/issues/58)). A home machine uses that machine's IP; a datacenter IP draws more challenges.
 
@@ -378,7 +389,7 @@ Browser and viewer run on Windows with Docker Desktop (WSL 2, Linux containers).
 3. Later: `& "$HOME\.cloakroom\app\start.ps1"` to start, `& "$HOME\.cloakroom\app\stop.ps1"` to stop. (In a fresh session where scripts are blocked: `powershell -ExecutionPolicy Bypass -File "$HOME\.cloakroom\app\start.ps1"`.)
 4. Commands: `docker exec cloakroom cloakroom status | key | smoke | chat "..."`. `key` prints a link to open on this machine; `smoke` writes its report to `~\.cloakroom\data\smoke\`.
 
-For the phone viewer: `docker exec cloakroom cloakroom share`.
+For the console on a phone: `docker exec cloakroom cloakroom share`.
 
 ### Internals
 
@@ -390,6 +401,8 @@ For the phone viewer: `docker exec cloakroom cloakroom share`.
 - **Stealth test:** `./examples/cloaktest.sh` runs upstream's bot-detection suite with the `.env` settings.
 - **Updates:** run the installer again; `cloakroom start` pulls the newest image. `CLOAKROOM_IMAGE` in `.env` pins another tag (CI publishes `:latest` from `main`, `:<branch>` from branches, and `:sha-<commit>`).
 - **Smoke test:** `cloakroom smoke [sites]` enters each site (default Amazon, Walmart, Target, Best Buy) from Bing on the API's browser worker, works any bot check when the OpenRouter key is set, and writes `report.html`, the screenshots and `result.json` to `~/.cloakroom/data/smoke/<id>/`.
+- **Console:** [`agent/console.html`](../../agent/console.html), served by the API at `/console`. It polls `GET /v1/events/next` rather than reading the SSE stream, because Cloudflare quick tunnels hold an SSE response until it ends. `/viewer/...` proxies noVNC (its files, and its websocket byte for byte), so one tunnel carries the console and the live browser.
+- **Console tests:** `pytest tests/test_console.py` drives a headless Chromium (the host's Playwright) through the share link against the running Cloakroom: the link and cookie, a new session to its reply, a queued follow-up, take over / hand back / stop, a sign-in handoff opened on a phone-sized browser, show it live, close, and unshare. Runs use the real model: a few cents and about ten minutes.
 - **Plain Compose:** `cp .env.example .env && docker compose up -d`, then `docker compose down`.
 
 ### Links

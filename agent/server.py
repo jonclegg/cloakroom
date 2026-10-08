@@ -10,16 +10,27 @@
     POST /v1/smoke                   {"sites": [...], "wait": true}: reach a few big sites
                                      and screenshot them (report.html in <data>/smoke/)
     GET  /v1/smoke/{id}
-    POST /v1/share                   a private HTTPS link to the viewer (a Cloudflare quick tunnel)
-    POST /v1/unshare                 stop it
+    POST /v1/runs/{run}/pause        hold the run after its current step, so the user can drive
+    POST /v1/runs/{run}/resume
+    GET  /v1/sessions                every session: status, latest screenshot, the conversation
+    GET  /v1/sessions/{session}
+    POST /v1/sessions/{session}/focus  bring its tab to the front, so the live view shows it
+    POST /v1/sessions/{session}/close  close its tab and forget it
+    POST /v1/share                   a private HTTPS link to the console (a Cloudflare quick tunnel)
+    POST /v1/unshare                 stop it; the link and its console key stop working
+    GET  /console                    the web console: ?key= from the share link sets its cookie
+    GET  /viewer/...                 the live browser (noVNC), for the console
     GET  /v1/status
     GET  /v1/events                  Server-Sent Events: every state change, in order.
                                      ?run= or ?session= filters; resume with Last-Event-ID
                                      (or ?since=<id>; ?since=0 replays what is still held)
+    GET  /v1/events/next?since=<id>  the same events as a long poll (waits up to 25 s);
+                                     without since, returns the current last_id at once
     GET  /v1/health                  no token; for the container health check
 
 Every route but /v1/health needs `Authorization: Bearer <token>`; the token is
-<data>/api-token, created on first start. A session is one browser tab and the
+<data>/api-token, created on first start. The console instead carries a cookie
+holding the console key, which only the share link gives out. A session is one browser tab and the
 conversation in it. One browser has one mouse, so runs go through a single worker
 thread, which is also the only thread that touches Playwright.
 
@@ -29,8 +40,8 @@ published once to the event stream, so a caller or a dashboard subscribes once
 instead of polling.
 
 A run that ends `needs_user` (a sign-in, a payment, a check only the user can
-clear) starts the share itself, and carries its link under `needs_user`, so the
-user can finish the step from any machine and the caller continues the session.
+clear) starts the share itself, and carries a console link to that session under
+`needs_user`, so the user can finish the step from any machine and carry on.
 """
 
 from __future__ import annotations
@@ -43,11 +54,13 @@ import os
 import queue
 import re
 import secrets
+import socket
 import subprocess
 import sys
 import threading
 import time
 import traceback
+from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlparse
 
@@ -68,14 +81,19 @@ PORT = int(os.environ.get("CLOAKROOM_API_LISTEN_PORT", "8423"))
 HOST_PORT = os.environ.get("CLOAKROOM_API_HOST_PORT") or str(PORT)
 CDP_URL = os.environ.get("CDP_URL", "http://127.0.0.1:9222")
 VIEWER_PORT = 6080
-VIEWER_HOST_PORT = os.environ.get("CLOAKROOM_VIEWER_HOST_PORT") or str(VIEWER_PORT)
+CONSOLE_PAGE = os.path.join(HERE, "console.html")
+CONSOLE_COOKIE = "cloakroom_console"
+SESSION_ID = re.compile(r"^s_[A-Za-z0-9_-]+$")
 SHARE_FILE = os.path.join(DATA_DIR, "share.json")
 SHARE_URL_SECONDS = 60
+BROWSER_START_SECONDS = 300
 SESSION_IDLE_SECONDS = int(os.environ.get("CLOAKROOM_SESSION_IDLE_SECONDS", "1800"))
 DEFAULT_MAX_STEPS = 40
 MAX_STEPS_LIMIT = 200
 EVENTS_HELD = 5000
 EVENTS_KEEPALIVE_SECONDS = 15
+# Under Cloudflare's 100-second limit for a response to start.
+EVENTS_POLL_SECONDS = 25
 # A reader that stops reading blocks its own thread on write; this frees it.
 EVENTS_WRITE_TIMEOUT_SECONDS = 30
 
@@ -146,9 +164,11 @@ def step_event(run, step):
 
 
 class Share:
-    """The Cloudflare quick tunnel to the viewer: one at a time, reused until stopped.
+    """The Cloudflare quick tunnel to the console: one at a time, reused until stopped.
 
-    Only the viewer (6080) is tunnelled, never CDP. The link is written to
+    The tunnel reaches this API (console, live viewer, routes), never CDP. The
+    link carries the console key; stopping the share makes a new key, so an old
+    link and the cookies it set stop working. The link is written to
     <data>/share.json so `cloakroom status` on the host can show it.
     """
 
@@ -156,13 +176,21 @@ class Share:
         self.events = events
         self.process = None
         self.url = None
+        self.key = secrets.token_urlsafe(24)
         self.lock = threading.Lock()
         if os.path.exists(SHARE_FILE):
             # Left by a container that stopped; its tunnel died with it.
             os.remove(SHARE_FILE)
 
     def link(self, reused):
-        return {"url": self.url, "viewer_local": f"http://127.0.0.1:{VIEWER_HOST_PORT}", "reused": reused}
+        return {"url": f"{self.url}/console?key={self.key}",
+                "local_url": f"http://127.0.0.1:{HOST_PORT}/console?key={self.key}", "reused": reused}
+
+    def session_link(self, session_id):
+        return f"{self.url}/console?key={self.key}&session={session_id}"
+
+    def valid_key(self, key):
+        return bool(key) and hmac.compare_digest(key, self.key)
 
     def start(self):
         with self.lock:
@@ -171,13 +199,16 @@ class Share:
             log_path = os.path.join(DATA_DIR, "share.log")
             with open(log_path, "w") as log:
                 self.process = subprocess.Popen(
-                    ["cloudflared", "tunnel", "--no-autoupdate", "--url", f"http://127.0.0.1:{VIEWER_PORT}"],
+                    ["cloudflared", "tunnel", "--no-autoupdate", "--url", f"http://127.0.0.1:{PORT}"],
                     stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)
             deadline = time.time() + SHARE_URL_SECONDS
             while time.time() < deadline:
                 with open(log_path) as fh:
-                    found = re.search(r"https://[A-Za-z0-9-]+\.trycloudflare\.com", fh.read())
-                if found:
+                    log_text = fh.read()
+                found = re.search(r"https://[A-Za-z0-9-]+\.trycloudflare\.com", log_text)
+                # The URL is printed before the edge can route it; a link handed out
+                # then answers with an error for the first few seconds.
+                if found and "Registered tunnel connection" in log_text:
                     self.url = found.group(0)
                     break
                 if self.process.poll() is not None:
@@ -207,22 +238,78 @@ class Share:
                 self.process.kill()
             self.process = None
             self.url = None
+            self.key = secrets.token_urlsafe(24)
             os.remove(SHARE_FILE)
         self.events.publish("share.stopped")
         return True
 
     def active_url(self):
         with self.lock:
-            return self.url if self.process is not None and self.process.poll() is None else None
+            running = self.process is not None and self.process.poll() is None
+            return f"{self.url}/console?key={self.key}" if running else None
 
 
 class Session:
     def __init__(self):
         self.id = new_id("s")
         self.page = None
+        self.url = None
         self.conversation = []
+        self.runs = []
         self.last_used = time.time()
-        self.busy = False
+
+    @property
+    def busy(self):
+        return any(run.status in ("queued", "running") for run in self.runs)
+
+    def state(self):
+        """One word for the console: needs, working, paused, waiting, done or stopped."""
+        running = next((run for run in self.runs if run.status == "running"), None)
+        if running:
+            return "paused" if running.paused else "working"
+        if any(run.status == "queued" for run in self.runs):
+            return "waiting"
+        last = self.runs[-1] if self.runs else None
+        if last and last.status in ("needs_user", "needs_input"):
+            return "needs"
+        if last and last.status == "cancelled":
+            return "stopped"
+        return "done"
+
+    def view(self, share, front):
+        last = self.runs[-1] if self.runs else None
+        shot = None
+        for run in reversed(self.runs):
+            steps = [step for step in (run.turn.steps if run.turn else []) if step.get("screenshot")]
+            if steps:
+                shot = f"/v1/runs/{run.id}/{steps[-1]['screenshot']}"
+                break
+        messages = []
+        for run in self.runs:
+            view = run.view(full=True)
+            messages.append({"from": "you", "text": run.message, "time": run.started})
+            messages.append({
+                "from": "cloakroom", "run": run.id, "status": run.status, "paused": run.paused,
+                "text": run.reply, "time": run.finished, "cost_usd": view["cost_usd"],
+                "files": view["files"], "max_steps": run.max_steps,
+                "steps": [{"observation": step.get("observation"), "did": step.get("did"),
+                           "seconds": round(sum((step.get("seconds") or {}).values()), 1)}
+                          for step in view.get("trace", [])],
+            })
+        state = self.state()
+        return {
+            "session": self.id,
+            "state": state,
+            "site": agent.site_of(self.url) or None,
+            "url": self.url,
+            "shot_url": shot,
+            "in_front": front == self.id,
+            "task": last.reply if state == "needs" else None,
+            "needs_user": last.needs_user if state == "needs" else None,
+            "running_run": next((run.id for run in self.runs if run.status in ("running", "queued")), None),
+            "last_used": time.strftime("%Y-%m-%dT%H:%M:%S%z", time.localtime(self.last_used)),
+            "messages": messages,
+        }
 
 
 class Run:
@@ -237,6 +324,7 @@ class Run:
         self.turn = None
         self.final_url = None
         self.needs_user = None
+        self.paused = False
         self.error = None
         self.started = now()
         self.finished = None
@@ -263,6 +351,7 @@ class Run:
             "host_dir": os.path.join(HOST_DATA_DIR, "runs", self.id) if HOST_DATA_DIR else None,
             "final_url": self.final_url,
             "needs_user": self.needs_user,
+            "paused": self.paused,
             "steps": len(turn.steps) if turn else 0,
             "sites": turn.sites if turn else [],
             "blocks": turn.blocks_seen if turn else [],
@@ -305,6 +394,7 @@ class Cloakroom:
         self.lock = threading.Lock()
         self.browser = None
         self.current = None
+        self.front = None
         self.smokes = {}
         self.setup_codes = key_setup.SetupCodes()
 
@@ -319,15 +409,14 @@ class Cloakroom:
                 session = self.sessions.get(session_id)
                 if session is None:
                     raise LookupError(f"no session {session_id} (it may have expired)")
-                if session.busy:
-                    raise RuntimeError(f"session {session_id} is still working on a message")
             else:
                 session = Session()
                 self.sessions[session.id] = session
                 self.events.publish("session.created", session=session.id)
-            session.busy = True
             session.last_used = time.time()
+            # A message to a busy session queues behind its current run.
             run = Run(session, message, max_steps)
+            session.runs.append(run)
             self.runs[run.id] = run
             # Published before the worker can see the run, so `run.queued` always
             # comes before that run's `run.started`.
@@ -341,6 +430,44 @@ class Cloakroom:
         if run.turn is not None:
             run.turn.cancelled = True
         self.events.publish("run.cancel_requested", run=run.id, session=run.session.id)
+
+    def pause(self, run, paused):
+        """Hold a running run after its current step (the user takes over), or let it go on."""
+        if run.status != "running" or run.turn is None:
+            raise RuntimeError(f"run {run.id} is {run.status}; only a running run can pause")
+        run.paused = paused
+        run.turn.paused = paused
+        self.events.publish("run.paused" if paused else "run.resumed", run=run.id, session=run.session.id)
+
+    def session(self, session_id):
+        with self.lock:
+            session = self.sessions.get(session_id)
+        if session is None:
+            raise LookupError(f"no session {session_id} (it may have expired or been closed)")
+        return session
+
+    def sessions_view(self):
+        with self.lock:
+            sessions = sorted(self.sessions.values(), key=lambda s: s.last_used, reverse=True)
+        return [session.view(self.share, self.front) for session in sessions]
+
+    def focus(self, session):
+        """Bring the session's tab to the front, after the run in progress if there is one."""
+        def chore(context):
+            if session.page is not None and not session.page.is_closed():
+                session.page.bring_to_front()
+                self.front = session.id
+                self.events.publish("session.focused", session=session.id)
+        self.queue.put(chore)
+
+    def close(self, session):
+        if session.busy:
+            raise RuntimeError(f"session {session.id} is still working; stop its run first")
+        with self.lock:
+            del self.sessions[session.id]
+        page = session.page
+        self.queue.put(lambda context: page is not None and not page.is_closed() and page.close())
+        self.events.publish("session.closed", session=session.id)
 
     def submit_smoke(self, sites):
         job = smoke.Smoke(sites or smoke.DEFAULT_SITES, HOST_DATA_DIR)
@@ -398,6 +525,19 @@ class Cloakroom:
 
     def work(self):
         playwright = sync_playwright().start()
+        # Connect now, not on the first message: cloakserve launches Chrome on its
+        # first connection, which can take minutes on a cold start. It also starts
+        # after this server, so keep trying for a while; after that a run retries.
+        deadline = time.time() + BROWSER_START_SECONDS
+        while True:
+            try:
+                self._connect(playwright)
+                break
+            except PlaywrightError as exc:
+                if time.time() > deadline:
+                    print(f"browser not reachable, the first run will retry: {exc}", file=sys.stderr, flush=True)
+                    break
+                time.sleep(2)
         while True:
             run = self.queue.get()
             if isinstance(run, smoke.Smoke):
@@ -430,7 +570,6 @@ class Cloakroom:
                 run.reply = run.reply or f"Cloakroom hit an internal error: {exc}"
             finally:
                 run.finished = now()
-                run.session.busy = False
                 run.session.last_used = time.time()
                 run.persist()
                 self.current = None
@@ -456,6 +595,7 @@ class Cloakroom:
 
     def _stepped(self, run):
         run.persist()
+        run.session.url = run.turn.steps[-1].get("url") or run.session.url
         turn = run.turn
         files = run.view()["files"][run.files_published:]
         run.files_published += len(files)
@@ -494,6 +634,7 @@ class Cloakroom:
             page = session.page = context.new_page()
             page.bring_to_front()
         page.set_default_timeout(30000)
+        self.front = session.id
 
         run.status = "running"
         self.events.publish("run.started", run=run.id, session=session.id)
@@ -503,11 +644,13 @@ class Cloakroom:
         # turn's, so a cancel that lands between the two lines is not lost.
         run.turn = turn
         turn.cancelled = run.cancel_requested
+        turn.paused = run.paused
         run.persist()
 
         status, reply, page = agent.run_turn(page, turn, lambda _turn: self._stepped(run))
         session.page = page
         run.final_url = page.url
+        session.url = page.url
         try:
             agent.reflect(turn, status, reply)
         except RuntimeError as exc:
@@ -516,8 +659,8 @@ class Cloakroom:
         run.status = status
         run.reply = reply
         if status == "needs_user":
-            share = self.share.start()
-            run.needs_user = {"task": reply, "share_url": share["url"]}
+            self.share.start()
+            run.needs_user = {"task": reply, "share_url": self.share.session_link(session.id)}
         session.conversation.append({"role": "caller", "text": run.message})
         session.conversation.append({"role": "cloakroom", "text": reply})
 
@@ -543,6 +686,16 @@ def load_token():
         return fh.read().strip()
 
 
+CONSOLE_EXPIRED = """<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>Cloakroom</title>
+<style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#0E1014;color:#E8EAEF;
+font:16px/1.5 system-ui,sans-serif;padding:24px;box-sizing:border-box}main{max-width:32rem}
+code{background:#1D212A;padding:2px 6px;border-radius:4px}</style></head>
+<body><main><h1 style="font-size:22px">This console link has expired</h1>
+<p>Console links stop working when sharing stops. Ask your agent for a new one, or run
+<code>cloakroom share</code> on the computer running Cloakroom.</p></main></body></html>"""
+
+
 def make_handler(cloakroom, token):
     class Handler(BaseHTTPRequestHandler):
         server_version = "cloakroom"
@@ -555,22 +708,103 @@ def make_handler(cloakroom, token):
             self.send_response(code)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(body)))
+            # The share tunnel goes through Cloudflare's CDN: nothing private may be cached there.
+            self.send_header("Cache-Control", "no-store, private")
             self.end_headers()
             self.wfile.write(body)
 
+        def _console_cookie(self):
+            cookie = SimpleCookie(self.headers.get("Cookie") or "")
+            return cookie[CONSOLE_COOKIE].value if CONSOLE_COOKIE in cookie else ""
+
         def _authorized(self):
             given = self.headers.get("Authorization", "").removeprefix("Bearer ").strip()
-            if hmac.compare_digest(given, token):
+            if hmac.compare_digest(given, token) or cloakroom.share.valid_key(self._console_cookie()):
                 return True
-            self._send(401, {"error": "missing or wrong bearer token (see ~/.cloakroom/data/api-token)"})
+            self._send(401, {"error": "missing or wrong bearer token (see ~/.cloakroom/data/api-token), "
+                                      "or an expired console link"})
             return False
+
+        def _console(self):
+            """The console page. The share link's ?key= becomes a cookie, then a clean URL."""
+            query = parse_qs(urlparse(self.path).query)
+            key = (query.get("key") or [""])[0]
+            if key:
+                if not cloakroom.share.valid_key(key):
+                    return self._send_html(401, CONSOLE_EXPIRED)
+                session = (query.get("session") or [""])[0]
+                secure = "; Secure" if self.headers.get("X-Forwarded-Proto") == "https" else ""
+                self.send_response(303)
+                # Lax, not Strict: a link opened from Messages is a cross-site
+                # navigation, and Strict would drop the cookie on the redirect.
+                self.send_header("Set-Cookie", f"{CONSOLE_COOKIE}={key}; Path=/; HttpOnly; SameSite=Lax{secure}")
+                self.send_header("Location", "/console" + (f"#{session}" if SESSION_ID.match(session) else ""))
+                self.send_header("Content-Length", "0")
+                self.send_header("Referrer-Policy", "no-referrer")
+                self.end_headers()
+                return None
+            if not cloakroom.share.valid_key(self._console_cookie()):
+                return self._send_html(401, CONSOLE_EXPIRED)
+            with open(CONSOLE_PAGE) as fh:
+                return self._send_html(200, fh.read())
+
+        def _proxy_viewer(self):
+            """Pass /viewer/... through to noVNC: its files, and its websocket byte for byte.
+
+            cloudflared keeps connections to this server alive and sends the next
+            request down the same one, so a file request is one request and one
+            response, never a pipe: a pipe would hand that next request to noVNC.
+            """
+            upgrade = self.headers.get("Upgrade", "").lower() == "websocket"
+            upstream = socket.create_connection(("127.0.0.1", VIEWER_PORT))
+            path = self.path[len("/viewer"):] or "/"
+            head = [f"{self.command} {path} {self.request_version}"]
+            for name, value in self.headers.items():
+                if name.lower() in ("cookie", "host") or (name.lower() == "connection" and not upgrade):
+                    continue
+                head.append(f"{name}: {value}")
+            head.append(f"Host: 127.0.0.1:{VIEWER_PORT}")
+            if not upgrade:
+                head.append("Connection: close")
+            upstream.sendall(("\r\n".join(head) + "\r\n\r\n").encode())
+            self.close_connection = True
+            if not upgrade:
+                with upstream:
+                    while chunk := upstream.recv(65536):
+                        self.connection.sendall(chunk)
+                return None
+
+            def to_client():
+                try:
+                    while chunk := upstream.recv(65536):
+                        self.connection.sendall(chunk)
+                except OSError:
+                    pass
+                finally:
+                    # Wakes the read below when noVNC's side ends first.
+                    try:
+                        self.connection.shutdown(socket.SHUT_RDWR)
+                    except OSError:
+                        pass
+
+            pump = threading.Thread(target=to_client, daemon=True)
+            pump.start()
+            try:
+                while chunk := self.rfile.read1(65536):
+                    upstream.sendall(chunk)
+            except OSError:
+                pass
+            finally:
+                upstream.close()
+                pump.join(5)
+            return None
 
         def _send_html(self, code, page):
             body = page.encode()
             self.send_response(code)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
-            self.send_header("Cache-Control", "no-store")
+            self.send_header("Cache-Control", "no-store, private")
             self.send_header("Referrer-Policy", "no-referrer")
             self.end_headers()
             self.wfile.write(body)
@@ -614,12 +848,32 @@ def make_handler(cloakroom, token):
                 return None
             if parts == ["setup"]:
                 return self._setup("GET")
+            if parts == [""]:
+                self.send_response(303)
+                self.send_header("Location", "/console")
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return None
+            if parts == ["console"]:
+                return self._console()
             if not self._authorized():
                 return None
+            if parts[0] == "viewer":
+                return self._proxy_viewer()
             if parts == ["v1", "status"]:
                 return self._send(200, cloakroom.status())
+            if parts == ["v1", "sessions"]:
+                return self._send(200, {"sessions": cloakroom.sessions_view()})
+            if len(parts) == 3 and parts[:2] == ["v1", "sessions"]:
+                try:
+                    session = cloakroom.session(parts[2])
+                except LookupError as exc:
+                    return self._send(404, {"error": str(exc)})
+                return self._send(200, session.view(cloakroom.share, cloakroom.front))
             if parts == ["v1", "events"]:
                 return self._stream_events()
+            if parts == ["v1", "events", "next"]:
+                return self._next_events()
             if parts == ["v1", "notes"]:
                 return self._send(200, {"sites": cloakroom.notebook.sites(),
                                         "general": cloakroom.notebook.notes_for("general", 1000),
@@ -664,7 +918,7 @@ def make_handler(cloakroom, token):
 
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
-            self.send_header("Cache-Control", "no-store")
+            self.send_header("Cache-Control", "no-store, private")
             self.end_headers()
             self.connection.settimeout(EVENTS_WRITE_TIMEOUT_SECONDS)
             cloakroom.events.reader(+1)
@@ -692,6 +946,18 @@ def make_handler(cloakroom, token):
             finally:
                 cloakroom.events.reader(-1)
 
+        def _next_events(self):
+            """The event stream as a long poll, for the console through the share tunnel:
+            Cloudflare quick tunnels hold a Server-Sent Events response until it ends."""
+            since = (parse_qs(urlparse(self.path).query).get("since") or [None])[0]
+            if since is None:
+                return self._send(200, {"events": [], "gap": False, "last_id": cloakroom.events.last_id()})
+            if not since.isdigit():
+                return self._send(400, {"error": "since must be a non-negative event id"})
+            events, gap = cloakroom.events.after(int(since), EVENTS_POLL_SECONDS)
+            return self._send(200, {"events": events, "gap": gap,
+                                    "last_id": events[-1]["id"] if events else int(since)})
+
         @staticmethod
         def _event_chunk(event):
             return (f"id: {event['id']}\nevent: {event['type']}\n"
@@ -716,6 +982,7 @@ def make_handler(cloakroom, token):
             self.send_response(200)
             self.send_header("Content-Type", types.get(ext, "application/octet-stream"))
             self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store, private")
             self.end_headers()
             self.wfile.write(body)
             return None
@@ -773,12 +1040,30 @@ def make_handler(cloakroom, token):
                     return self._send(202, run.view())
                 run.done.wait()
                 return self._send(200, run.view())
-            if len(parts) == 4 and parts[:2] == ["v1", "runs"] and parts[3] == "cancel":
+            if len(parts) == 4 and parts[:2] == ["v1", "runs"] and parts[3] in ("cancel", "pause", "resume"):
                 run = cloakroom.runs.get(parts[2])
                 if run is None:
                     return self._send(404, {"error": f"no run {parts[2]}"})
-                cloakroom.cancel(run)
-                return self._send(200, {"run": run.id, "cancelling": run.status in ("queued", "running")})
+                if parts[3] == "cancel":
+                    cloakroom.cancel(run)
+                    return self._send(200, {"run": run.id, "cancelling": run.status in ("queued", "running")})
+                try:
+                    cloakroom.pause(run, parts[3] == "pause")
+                except RuntimeError as exc:
+                    return self._send(409, {"error": str(exc)})
+                return self._send(200, {"run": run.id, "paused": run.paused})
+            if len(parts) == 4 and parts[:2] == ["v1", "sessions"] and parts[3] in ("focus", "close"):
+                try:
+                    session = cloakroom.session(parts[2])
+                    if parts[3] == "focus":
+                        cloakroom.focus(session)
+                    else:
+                        cloakroom.close(session)
+                except LookupError as exc:
+                    return self._send(404, {"error": str(exc)})
+                except RuntimeError as exc:
+                    return self._send(409, {"error": str(exc)})
+                return self._send(200, {"session": session.id, parts[3]: True})
             return self._send(404, {"error": "not found"})
 
     return Handler
