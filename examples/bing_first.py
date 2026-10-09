@@ -95,16 +95,30 @@ def _organic_link(page, domain, skip=0):
 
 ###############################################################################
 
+def _is_rebates_link(url):
+    """A Bing Rebates wrapper ("Up to $8 cash back"): `/rebates/welcome?url=...`.
+
+    Bing shows it in place of the plain organic link to some profiles (a fresh
+    one got it for walmart.com, an older one did not). Clicking it opens Bing's
+    rebates sign-up rather than the site, so it never navigates.
+    """
+    return "/rebates/welcome" in (url or "")
+
+
 def _resolve_bing_redirect(url):
-    """Decode a bing.com/ck/a click-tracker URL to the page it points at.
+    """Decode a Bing click-tracker or rebates URL to the page it points at.
 
     Bing's redirect can stall as a top-level navigation (it expects the click it
     was built for), which made ~30% of entries fail. The destination is in the
-    `u` parameter: base64url with an `a1` prefix.
+    `u` parameter: base64url with an `a1` prefix. A rebates link carries it
+    plainly in `url`.
     """
     import base64
     from urllib.parse import parse_qs
 
+    if _is_rebates_link(url):
+        destination = (parse_qs(urlparse(url).query).get("url") or [""])[0]
+        return destination if destination.startswith("http") else None
     if "bing.com/ck/a" not in (url or ""):
         return None
     try:
@@ -138,7 +152,9 @@ def _click_and_follow(page, link, domain=None):
     start_url = page.url
 
     landed = None
-    for attempt in range(3):
+    # A rebates link never navigates when clicked; go straight to the fallback.
+    clicks = 0 if _is_rebates_link(link.get_attribute("href")) else 3
+    for attempt in range(clicks):
         humanize.human_click(page, link)
         deadline = time.time() + 12
         while time.time() < deadline:

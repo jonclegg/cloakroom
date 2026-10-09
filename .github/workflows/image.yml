@@ -1,9 +1,9 @@
 # Publishes ghcr.io/jonclegg/cloakroom, the image `cloakroom start` pulls.
 #
 # Each architecture builds natively (no emulation): first the CloakBrowser base
-# from the jonclegg fork, without the browser binary (the Binary License forbids
-# redistributing it; each user's container downloads it from CloakHQ on first
-# start), then Cloakroom on top. A last job joins the two into one tag.
+# from the jonclegg fork (cloakserve, without CloakHQ's binary), then Cloakroom
+# on top, which installs the Fury core from the fury-antidetect-browser fork's
+# releases. A last job joins the two into one tag.
 #
 # main publishes :latest; any other branch publishes :<branch> for testing with
 # CLOAKROOM_IMAGE=ghcr.io/jonclegg/cloakroom:<branch>.

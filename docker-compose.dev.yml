@@ -3,10 +3,10 @@
 # start.sh adds this file to COMPOSE_FILE for that run. CLOAKBROWSER_SOURCE points
 # the base at a local checkout of the fork instead of its GitHub branch.
 services:
-  # Base image only: never started. CloakBrowser from the jonclegg fork, which adds
-  # a persistent default seed, process limits, GeoIP without a proxy, coherent
-  # window geometry and hardware, and native X11 input. Built without the
-  # browser binary, which the container downloads from CloakHQ on first start.
+  # Base image only: never started. CloakBrowser from the jonclegg fork, for
+  # cloakserve: the browser pool, a persistent default seed, process limits, GeoIP
+  # without a proxy, and native X11 input. Built without CloakBrowser's binary;
+  # the browser is the Fury core the cloakroom image installs.
   cloakbrowser:
     build:
       context: ${CLOAKBROWSER_SOURCE:-https://github.com/jonclegg/CloakBrowser.git#cloakroom-fixes}
@@ -19,6 +19,10 @@ services:
   cloakroom:
     build:
       context: ./image
+      # FURY_CORE_URL, when set, builds against cores that are not released yet,
+      # e.g. a local `python3 -m http.server` over the fork's dist/ folder.
+      args:
+        - FURY_CORE_URL
       additional_contexts:
         agent: ./agent
         examples: ./examples

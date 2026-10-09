@@ -4,21 +4,28 @@ Cloakroom
 The scripts, Compose file, Dockerfile, and examples in this repository are
 licensed under the MIT License (see LICENSE).
 
-Cloakroom does not include, modify, or redistribute the CloakBrowser browser
-binary. Its image (ghcr.io/jonclegg/cloakroom) is built from the MIT-licensed
-CloakBrowser wrapper code, from the fork at
-https://github.com/jonclegg/CloakBrowser/tree/cloakroom-fixes, without the binary.
-The first time the container starts, it downloads the binary directly from
-CloakHQ's official distribution channel onto your machine.
+The browser in Cloakroom's image (ghcr.io/jonclegg/cloakroom) is the Fury core:
+Chromium with Fury's fingerprint patches, built for Linux from the fork at
+https://github.com/jonclegg/fury-antidetect-browser/tree/linux-build and
+downloaded at image build time from that fork's releases.
 
-- CloakBrowser wrapper code (Python/JS/.NET) is MIT licensed by CloakHQ.
-- The CloakBrowser Chromium binary is proprietary software from CloakHQ,
-  governed by its own CloakBrowser Binary License:
-  https://github.com/CloakHQ/CloakBrowser/blob/main/BINARY-LICENSE.md
+- Chromium is BSD-3-Clause licensed by The Chromium Authors, with third-party
+  components under their own licenses (listed at chrome://credits in the
+  browser).
+- Fury's patch series (core/patches in the fork) is BSD-3-Clause licensed by
+  The Fury Authors. Its build scripts and the rest of the Fury repository are
+  AGPL-3.0-or-later; none of them are in the image.
+- The core is built with proprietary_codecs (H.264, AAC), as Chrome is.
+- fury-personas.json is derived from Fury's persona catalogue
+  (shared-rs/src/catalogue.rs, AGPL-3.0-or-later) by its `catalogue` example.
 
-By running Cloakroom you use the CloakBrowser binary and agree to CloakHQ's
-Binary License. Cloakroom is an independent community project and is not
-affiliated with or endorsed by CloakHQ.
+The image also contains the MIT-licensed CloakBrowser wrapper code (for
+cloakserve, the browser pool, GeoIP, and native input), from the fork at
+https://github.com/jonclegg/CloakBrowser/tree/cloakroom-fixes. It does not
+contain or download CloakHQ's proprietary CloakBrowser binary.
+
+Cloakroom is an independent community project and is not affiliated with or
+endorsed by CloakHQ or the Fury authors.
 
 The optional in-browser viewer uses noVNC (MPL-2.0), websockify (LGPL-3.0),
 and x11vnc (GPL-2.0), installed from Debian packages at build time.

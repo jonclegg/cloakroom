@@ -14,7 +14,7 @@ function Invoke-Docker {
     if ($LASTEXITCODE -ne 0) { Fail "'docker $args' failed. See the message above." }
 }
 
-Write-Host "Cloakroom - starting CloakBrowser" -ForegroundColor White
+Write-Host "Cloakroom - starting the browser" -ForegroundColor White
 Write-Host ""
 
 if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
@@ -36,7 +36,7 @@ if ($LASTEXITCODE -ne 0) {
 
 if (-not (Test-Path .env)) {
     Copy-Item .env.example .env -ErrorAction Stop
-    Write-Host "Created .env with default settings (edit it later to add a license key or proxy)."
+    Write-Host "Created .env with default settings (edit it later to add a proxy)."
 }
 
 # The API writes notes, run logs, photos and smoke reports here. Compose needs it
@@ -57,7 +57,7 @@ if ($env:CLOAKROOM_DEV -eq "1") {
 Write-Host "2/3 Starting the browser..."
 Invoke-Docker compose up -d --force-recreate cloakroom
 
-# The first start also downloads the browser itself from CloakHQ (~150 MB).
+# The first start also downloads the GeoIP database (~70 MB).
 Write-Host "3/3 Waiting for the browser to be ready..."
 $status = "missing"
 for ($i = 0; $i -lt 300; $i++) {

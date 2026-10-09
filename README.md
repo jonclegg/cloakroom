@@ -35,8 +35,8 @@ Ask your agent to share a link to the Cloakroom console: every session it is run
 
 - **Sign in yourself.** When a site needs a password, Cloakroom stops and your agent sends you a private link to the browser, so you can sign in from your phone or any computer. Don't paste passwords into the chat. Your agent can type in texted sign-in codes for you.
 - **It runs on your computer.** Traffic leaves from your own internet connection, and nothing is reachable from outside unless you share the console link, and the console asks for a password you choose when you set Cloakroom up.
-- **The details** for agents and the curious are in [AGENTS.md](AGENTS.md) and [the agent guide](skills/cloakroom/SKILL.md). The browser is [CloakBrowser](https://github.com/CloakHQ/CloakBrowser), run from [this fork](https://github.com/jonclegg/CloakBrowser/tree/cloakroom-fixes).
+- **The details** for agents and the curious are in [AGENTS.md](AGENTS.md) and [the agent guide](skills/cloakroom/SKILL.md). The browser is the [Fury](https://github.com/furyteamtop/fury-antidetect-browser) core, a Chromium with fingerprint patches, built for Linux in [this fork](https://github.com/jonclegg/fury-antidetect-browser/tree/linux-build).
 
 ## License
 
-Cloakroom's own code is [MIT licensed](LICENSE). The CloakBrowser binary belongs to CloakHQ and has its own [Binary License](https://github.com/CloakHQ/CloakBrowser/blob/main/BINARY-LICENSE.md). Cloakroom's image doesn't include it: your container downloads it from CloakHQ the first time it starts. See [NOTICE](NOTICE). Cloakroom is an independent community project, not affiliated with CloakHQ or any site mentioned here.
+Cloakroom's own code is [MIT licensed](LICENSE). The browser is Chromium (BSD-3-Clause) with Fury's patches (BSD-3-Clause); see [NOTICE](NOTICE) for every component's license. Cloakroom is an independent community project, not affiliated with CloakHQ, the Fury authors, or any site mentioned here.

@@ -1,6 +1,6 @@
 # Agent instructions
 
-Cloakroom is a stealth browser (CloakBrowser) with a persistent profile, running in a container on the user's own computer. You give it goals with `cloakroom chat`, or drive it yourself over CDP. Use it when a site blocks your cloud browser, when cookies and logins need to persist between runs, or when the user asks you to do something "with cloakroom". [`skills/cloakroom/SKILL.md`](skills/cloakroom/SKILL.md) is the full reference.
+Cloakroom is a stealth browser (Chromium with [Fury](https://github.com/jonclegg/fury-antidetect-browser/tree/linux-build)'s fingerprint patches) with a persistent profile, running in a container on the user's own computer. You give it goals with `cloakroom chat`, or drive it yourself over CDP. Use it when a site blocks your cloud browser, when cookies and logins need to persist between runs, or when the user asks you to do something "with cloakroom". [`skills/cloakroom/SKILL.md`](skills/cloakroom/SKILL.md) is the full reference.
 
 ## Installing Cloakroom for the user
 
@@ -22,7 +22,7 @@ Windows (PowerShell):
 irm https://raw.githubusercontent.com/jonclegg/cloakroom/main/install.ps1 | iex # // pragma: allowlist secret
 ```
 
-The first run takes a few minutes. It downloads the image (about 1 GB), and on first start the container downloads the browser itself from CloakHQ.
+The first run takes a few minutes. It downloads the image (about 1 GB, browser included), and on first start the container downloads a GeoIP database.
 
 **3. If it stops with `CLOAKROOM_NEEDS: docker`** (exit code 3), the computer has no container engine, and the installer changed nothing. **Ask the user** whether to install one, and say which one the output names: OrbStack on a Mac, Docker Engine on Linux, Docker Desktop on Windows. If they agree, run the installer again with consent:
 

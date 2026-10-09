@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Cloakroom · a stealth browser at home for your AI agent</title>
-<meta name="description" content="Cloakroom runs CloakBrowser, a stealth Chromium, in Docker on a computer you keep at home. Your agent drives it over CDP from your home connection, with one profile that stays signed in.">
+<meta name="description" content="Cloakroom runs a stealth Chromium in Docker on a computer you keep at home. Your agent drives it over CDP from your home connection, with one profile that stays signed in.">
 <meta property="og:title" content="Cloakroom: a stealth browser at home for your AI agent">
 <meta property="og:description" content="Your agent's cloud browser gets bot-walled. Cloakroom runs a stealth Chromium in Docker on your own machine, on your own connection, with logins that stick.">
 <meta property="og:image" content="https://jonclegg.github.io/cloakroom/og.png"> <!-- pragma: allowlist secret -->
@@ -254,7 +254,7 @@
         <div class="box">
           <div class="t">Docker container</div>
           <ul>
-            <li><b>CloakBrowser</b>: CloakHQ's stealth build of Chromium, run <em>headed</em> on Xvfb, served over CDP on <code>127.0.0.1:9222</code></li>
+            <li><b>Chromium with Fury's patches</b>: fingerprint patches in C++, built for Linux, run <em>headed</em> on Xvfb, served over CDP on <code>127.0.0.1:9222</code></li>
             <li><b>Chat API</b> on <code>127.0.0.1:8423</code>: <code>cloakroom chat "…"</code> and Cloakroom drives the browser with DeepSeek, working bot checks as it goes</li>
             <li><b>Persistent profile</b> in a Docker volume: cookies and logins survive restarts</li>
             <li><b>noVNC viewer</b> on <code>127.0.0.1:6080</code> for watching and taking over</li>
@@ -351,7 +351,7 @@ irm https://raw.githubusercontent.com/jonclegg/cloakroom/main/install.ps1 | iex<
       <details><summary>Does it keep me signed in?</summary><div><p>Yes. The profile lives in a Docker volume, so cookies and logins survive <code>cloakroom stop</code>, reboots and image updates. Only <code>docker compose down -v</code> deletes it. The browser's fingerprint is kept with the profile too, so sites keep seeing the same device.</p></div></details>
       <details><summary>How do text-message 2FA codes work?</summary><div><p>Your agent handles the code, not Cloakroom. It might read it from Messages or email on your computer and type it in. If it can't, you type it in the viewer. Cloakroom never reads your texts. Because the profile persists, most sites only ask on the first sign-in.</p></div></details>
       <details><summary>Can I run it on a server instead of at home?</summary><div><p>You can, but then you're back on a datacenter IP, which is the problem Cloakroom exists to solve. The point is a machine on your home connection.</p></div></details>
-      <details><summary>What is CloakBrowser, and is this free?</summary><div><p>CloakBrowser is a closed-source stealth build of Chromium from CloakHQ. Cloakroom runs it from <a href="https://github.com/jonclegg/CloakBrowser/tree/cloakroom-fixes">a fork of its open-source wrapper</a> and adds the headed display, the viewer, the persistent profile, the chat agent, the CLI and the agent guide. Cloakroom's own code is MIT licensed. The CloakBrowser binary is CloakHQ's, under their Binary License: Cloakroom's image doesn't include it, and your container downloads it from CloakHQ on first start. A license key is optional. Cloakroom's agent uses DeepSeek through your own OpenRouter key, which costs a few cents a task. Cloakroom is not affiliated with CloakHQ.</p></div></details>
+      <details><summary>Which browser is it, and is this free?</summary><div><p>It is Chromium with <a href="https://github.com/furyteamtop/fury-antidetect-browser">Fury</a>'s fingerprint patches, which change what the browser reports in C++ rather than with injected JavaScript, built for Linux in <a href="https://github.com/jonclegg/fury-antidetect-browser/tree/linux-build">a fork</a>. Each profile wears a real machine from Fury's catalogue: a Mac on a Mac, a Windows PC elsewhere. Cloakroom adds the headed display, the viewer, the persistent profile, the chat agent, the CLI and the agent guide. Everything is open source and free: Cloakroom's own code is MIT licensed, and Chromium and Fury's patches are BSD-3-Clause. Cloakroom's agent uses DeepSeek through your own OpenRouter key, which costs a few cents a task.</p></div></details>
       <details><summary>Is this allowed?</summary><div><p>Use your own accounts and stay within each site's terms. Cloakroom is meant to let your agent do what you'd do yourself in a browser, like ordering groceries or checking an order. It is not for scraping at scale or getting around a ban. There are no site-specific scripts, by design.</p></div></details>
       <details><summary>How heavy is it?</summary><div><p>One container with a headed Chromium, Xvfb, a VNC server and the chat API. Expect about 1&nbsp;GB of downloads on first start, which can take up to ten minutes. The container gets 2&nbsp;GB of shared memory. It restarts automatically unless you stop it.</p></div></details>
     </div>
@@ -368,7 +368,7 @@ irm https://raw.githubusercontent.com/jonclegg/cloakroom/main/install.ps1 | iex<
 
   <footer>
     <a href="https://github.com/jonclegg/cloakroom">GitHub</a> · <a href="https://github.com/jonclegg/cloakroom/blob/main/skills/cloakroom/SKILL.md">Agent guide</a> · <a href="https://github.com/jonclegg/cloakroom/blob/main/LICENSE">MIT License</a><br> <!-- pragma: allowlist secret -->
-    The CloakBrowser binary belongs to CloakHQ and has its own license. Cloakroom is an independent community project, not affiliated with CloakHQ or any site mentioned here.
+    The browser is Chromium with Fury's patches, both BSD-3-Clause. Cloakroom is an independent community project, not affiliated with CloakHQ, the Fury authors, or any site mentioned here.
   </footer>
 </div>
 <script>

@@ -21,7 +21,7 @@ fail() {
   exit 1
 }
 
-echo "${bold}Cloakroom${reset} - starting CloakBrowser"
+echo "${bold}Cloakroom${reset} - starting the browser"
 echo
 
 source ./lib.sh
@@ -142,7 +142,7 @@ fi
 
 if [ ! -f .env ]; then
   cp .env.example .env
-  echo "Created .env with default settings (edit it later to add a license key or proxy)."
+  echo "Created .env with default settings (edit it later to add a proxy)."
 fi
 
 export_host_timezone
@@ -184,7 +184,7 @@ then run: cloakroom start"
   fail "Docker could not start the browser. See the message above."
 fi
 
-# The first start also downloads the browser itself from CloakHQ (~150 MB).
+# The first start also downloads the GeoIP database (~70 MB).
 echo "3/3 Waiting for the browser to be ready..."
 for _ in $(seq 1 300); do
   status="$(docker inspect -f '{{.State.Health.Status}}' cloakroom 2>/dev/null || echo missing)"

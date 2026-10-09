@@ -1,4 +1,4 @@
-# Local settings (license key, proxy credentials)
+# Local settings (proxy credentials)
 .env
 .env.*
 !.env.example

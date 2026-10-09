@@ -1,0 +1,174 @@
+#!/usr/bin/env python3
+"""Launch the Fury core the way cloakserve launches CloakBrowser's binary.
+
+cloakserve runs the browser pool, GeoIP and native input, and starts the browser
+with CloakBrowser's flags: --fingerprint=<seed>, --fingerprint-platform,
+--fingerprint-timezone, --lang and so on. CLOAKBROWSER_BINARY_PATH points it
+here instead. This turns those flags into a Fury persona config, hands the
+config to the core on descriptor 3 (--fury-fp-fd=3), and execs the core in this
+process, so cloakserve's handle on it stays valid.
+
+The persona is a real machine from Fury's catalogue (fury-personas.json, made by
+`cargo run -p fury-shared --example catalogue` in jonclegg/fury-antidetect-browser).
+It is chosen among those whose screen is the container's Xvfb display, so the
+screen a page measures is the one the window is really on, and the seed picks
+among them, so a profile keeps its machine across restarts.
+"""
+
+import ipaddress
+import json
+import os
+import subprocess
+import sys
+import tempfile
+
+import geoip2.database
+from cloakbrowser.geoip import _ensure_geoip_db
+
+CORE = "/opt/fury/chrome"
+PERSONAS = "/opt/fury/personas.json"
+MASK64 = (1 << 64) - 1
+# Height of this Chromium's own tab strip and toolbar on Linux, in CSS px:
+# a 777 px window measured innerHeight 686. Patch 0020 reports outerHeight as
+# innerHeight plus the persona's chromeHeightDelta, so the window is sized to
+# make that sum the persona's available height.
+LINUX_CHROME_HEIGHT = 91
+
+
+def flag_values(argv):
+    values = {}
+    for arg in argv:
+        if arg.startswith("--") and "=" in arg:
+            name, value = arg[2:].split("=", 1)
+            values[name] = value
+    return values
+
+
+# Fury's sub-seed, from shared-rs/src/persona.rs (mix, sub_seed), so a profile
+# gets the same noise here as it would from Fury's own agent.
+def mix(z):
+    z = (z + 0x9E3779B97F4A7C15) & MASK64
+    z = ((z ^ (z >> 30)) * 0xBF58476D1CE4E5B9) & MASK64
+    z = ((z ^ (z >> 27)) * 0x94D049BB133111EB) & MASK64
+    return z ^ (z >> 31)
+
+
+def sub_seed(seed, purpose):
+    h = seed
+    for byte in purpose.encode():
+        h = mix(h ^ byte)
+    return mix(h) & 0x7FFFFFFF
+
+
+def choose_persona(platform, seed):
+    width, height = (int(n) for n in os.environ.get("CLOAKBROWSER_DISPLAY_SIZE", "1920x1080").split("x"))
+    wanted_os = {"macos": "macOS", "windows": "Windows"}[platform]
+    with open(PERSONAS) as f:
+        personas = json.load(f)
+    matching = [
+        p for p in personas
+        if p["os"] == wanted_os
+        and round(p["screen"]["width"] * p["screen"]["devicePixelRatio"]) == width
+        and round(p["screen"]["height"] * p["screen"]["devicePixelRatio"]) == height
+    ]
+    if not matching:
+        raise SystemExit(f"fury-chrome: no {wanted_os} persona has a {width}x{height} screen; "
+                         f"set CLOAKBROWSER_DISPLAY_SIZE to one that a catalogue persona has")
+    # Weighted by how common the machine is, as Fury's own pick is.
+    point = (mix(seed) % 1_000_000) / 1_000_000 * sum(p["weight"] for p in matching)
+    for persona in matching:
+        point -= persona["weight"]
+        if point < 0:
+            return persona
+    return matching[-1]
+
+
+def image_font_families():
+    """Families the image's own font packages installed, under /usr/share/fonts.
+
+    These are the Linux ones (Liberation, WenQuanYi, ...) that neither persona's
+    machine has; a Mac host's own fonts are mounted under /usr/local/share/fonts.
+    Measured: Liberation Sans rendered in a macOS profile without this.
+    """
+    listing = subprocess.run(["fc-list", "--format", "%{file}\t%{family}\n"],
+                             capture_output=True, text=True, check=True).stdout
+    families = set()
+    for line in listing.splitlines():
+        path, names = line.split("\t", 1)
+        if path.startswith("/usr/share/fonts/"):
+            families.update(name.strip() for name in names.split(","))
+    return families
+
+
+def languages_for(locale):
+    language = locale.split("-")[0]
+    if language == "en":
+        return [locale, "en"] if locale != "en" else ["en-US", "en"]
+    return [locale, language, "en-US", "en"]
+
+
+def geolocation_for(ip):
+    with geoip2.database.Reader(str(_ensure_geoip_db())) as reader:
+        location = reader.city(ip).location
+    return {"latitude": location.latitude, "longitude": location.longitude, "accuracy": 20000.0}
+
+
+def main():
+    argv = sys.argv[1:]
+    flags = flag_values(argv)
+    seed = int(flags["fingerprint"])
+    platform = flags.get("fingerprint-platform", "windows")
+    timezone = flags["fingerprint-timezone"]
+    locale = flags["lang"]
+
+    persona = choose_persona(platform, seed)
+    config = persona["config"]
+    config["locale"] = {"timezone": timezone, "locale": locale}
+    config["navigator"]["languages"] = languages_for(locale)
+    config["noise"] = {purpose + "Seed": sub_seed(seed, purpose)
+                       for purpose in ("canvas", "audio", "clientRects")}
+    config["noise"]["deviceIdSalt"] = sub_seed(seed, "deviceId")
+    config["fontsHidden"] = sorted(set(config["fontsHidden"]) | image_font_families())
+    exit_ip = flags.get("fingerprint-webrtc-ip")
+    if exit_ip and not ipaddress.ip_address(exit_ip).is_private:
+        config["geolocation"] = geolocation_for(exit_ip)
+
+    print(f"fury-chrome: persona {persona['id']}, seed {seed}, {timezone}, {locale}", file=sys.stderr)
+
+    # Read to EOF by the core; unlinked so nothing else can open it.
+    with tempfile.NamedTemporaryFile("w", delete=False, dir="/tmp", prefix="fury-config-") as f:
+        json.dump(config, f)
+    fd = os.open(f.name, os.O_RDONLY)
+    os.unlink(f.name)
+    # cloakserve starts this with only 0-2 open, so the open above is usually
+    # descriptor 3 already, and dup2 onto itself keeps Python's close-on-exec.
+    os.dup2(fd, 3)
+    os.set_inheritable(3, True)
+
+    screen = config["screen"]
+    args = [arg for arg in argv if not arg.startswith("--fingerprint")]
+    args += [
+        "--fury-fp-fd=3",
+        # The window fills the persona's available area, as a maximized window
+        # on that machine does: under the menu bar and above the Dock on a Mac,
+        # above the taskbar on Windows. The page measures the real window, so
+        # anywhere else would sit where that machine's own chrome is.
+        f"--window-position={screen['availLeft']},{screen['availTop']}",
+        f"--window-size={screen['availWidth']},"
+        f"{screen['availHeight'] - screen['chromeHeightDelta'] + LINUX_CHROME_HEIGHT}",
+        # No GPU in the container: WebGL and WebGPU come from SwiftShader, which
+        # Chromium no longer falls back to on its own.
+        "--enable-unsafe-swiftshader",
+        # cloakserve passes --no-sandbox (the container runs as root), and
+        # Chromium answers it with an "unsupported command-line flag" bar that
+        # shrinks the page. --test-type is the switch that suppresses that bar.
+        "--test-type",
+        # What Fury's agent passes: field-trial testing config force-enables
+        # features real stable Chrome ships disabled (launcher.rs).
+        "--disable-field-trial-config",
+    ]
+    os.execv(CORE, [CORE, *args])
+
+
+if __name__ == "__main__":
+    main()
