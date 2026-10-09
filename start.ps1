@@ -1,3 +1,5 @@
+# --force-onboard: show the first-run next steps even when the OpenRouter key is set.
+$forceOnboard = $args -contains "--force-onboard"
 Set-Location $PSScriptRoot
 
 function Fail($message) {
@@ -80,10 +82,12 @@ Write-Host "  See the browser:    $viewerUrl"
 Write-Host "  Chat with it:       docker exec cloakroom cloakroom chat `"<message>`"   (API $apiUrl)"
 Write-Host "  Stop everything:    .\stop.ps1"
 Write-Host ""
-Write-Host "  Next: docker exec cloakroom cloakroom key     (open the link it prints and paste your OpenRouter key)"
-Write-Host "        docker exec cloakroom cloakroom smoke   (check it can reach Amazon, Walmart, Target and Best Buy;"
-Write-Host "                                                 the report is in $env:CLOAKROOM_DATA_DIR\smoke)"
-Write-Host ""
+if ($forceOnboard -or -not (Test-Path (Join-Path $env:CLOAKROOM_DATA_DIR "openrouter.key"))) {
+    Write-Host "  Next: docker exec cloakroom cloakroom key     (open the link it prints and paste your OpenRouter key)"
+    Write-Host "        docker exec cloakroom cloakroom smoke   (check it can reach Amazon, Walmart, Target and Best Buy;"
+    Write-Host "                                                 the report is in $env:CLOAKROOM_DATA_DIR\smoke)"
+    Write-Host ""
+}
 Write-Host "  For scripts (Playwright, Puppeteer): $cdpUrl"
 Write-Host "  Only this computer can connect. Your logins are kept between restarts."
 Write-Host ""

@@ -2,6 +2,15 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
+# --force-onboard: show the first-run next steps even when the OpenRouter key is set.
+force_onboard=no
+for argument in "$@"; do
+  case "$argument" in
+    --force-onboard) force_onboard=yes ;;
+    *) echo "Unknown option: $argument (start takes --force-onboard)" >&2; exit 2 ;;
+  esac
+done
+
 bold=$'\033[1m'; green=$'\033[32m'; red=$'\033[31m'; reset=$'\033[0m'
 CLOAKROOM_INSTALL_URL="https://raw.githubusercontent.com/jonclegg/cloakroom/main/install.sh" # // pragma: allowlist secret
 
@@ -202,16 +211,16 @@ ${green}${bold}You're ready!${reset}
   Watch from a phone: cloakroom share
   Stop everything:    cloakroom stop
 
-  Next: cloakroom key     paste your OpenRouter key into the page it opens
-        cloakroom smoke   check it can reach Amazon, Walmart, Target and Best Buy
-
   Only this computer can connect. Your logins are kept between restarts.
 
 EOF
 
 # Cloakroom's own agent needs an OpenRouter key. Ask for it on a local page, never
 # in a terminal an agent might be reading or in chat.
-if [ ! -s "${CLOAKROOM_DATA_DIR:-${HOME}/.cloakroom/data}/openrouter.key" ]; then
-  echo "  One more step for 'cloakroom chat': add your OpenRouter key with: cloakroom key"
-  echo
+if [ "$force_onboard" = yes ] || [ ! -s "${CLOAKROOM_DATA_DIR:-${HOME}/.cloakroom/data}/openrouter.key" ]; then
+  cat <<EOF
+  Next: cloakroom key     paste your OpenRouter key into the page it opens
+        cloakroom smoke   check it can reach Amazon, Walmart, Target and Best Buy
+
+EOF
 fi

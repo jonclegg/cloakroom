@@ -15,7 +15,8 @@ usage() {
   cat >&2 <<EOF
 Usage: cloakroom <command> [--json]
 
-  start          Start the stealth browser.
+  start          Start the stealth browser. --force-onboard shows the first-run
+                 next steps even when the OpenRouter key is set.
   stop           Stop it (the profile is kept).
   status         Is it ready, and the viewer, CDP, and share URLs.
   share          HTTPS link to the console: every session and the live
@@ -85,7 +86,7 @@ open_on_host() {
 command="${1:-}"
 [ $# -gt 0 ] && shift
 case "$command" in
-  start) exec bash "${CLOAKROOM_ROOT}/start.sh" ;;
+  start) exec bash "${CLOAKROOM_ROOT}/start.sh" "$@" ;;
   stop) exec bash "${CLOAKROOM_ROOT}/stop.sh" ;;
   status) status "$@" ;;
   share)

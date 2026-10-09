@@ -8,6 +8,8 @@
 # previous copy is kept in ~/.cloakroom/app.previous. Your .env settings carry over.
 #
 # Optional: CLOAKROOM_TARBALL_URL installs from another tarball (a fork, branch or tag).
+# Arguments go to `cloakroom start`: `| sh -s -- --force-onboard` shows the first-run
+# next steps even when the OpenRouter key is set.
 #
 # For agents running this for a user: without a container engine the installer
 # changes nothing and exits 3 after a line starting "CLOAKROOM_NEEDS: docker".
@@ -388,7 +390,7 @@ main() {
   install_app
   link_cli
   say "Starting Cloakroom..."
-  "${INSTALL_DIR}/cloakroom" start </dev/null
+  "${INSTALL_DIR}/cloakroom" start "$@" </dev/null
 }
 
 main "$@"
