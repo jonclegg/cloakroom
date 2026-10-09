@@ -8,6 +8,10 @@ services:
     container_name: cloakroom
     hostname: cloakroom
     restart: unless-stopped
+    # An init as PID 1 to reap orphans. Chrome's crashpad handlers outlive their
+    # browsers, and nothing else in the container waits on them: measured 455
+    # zombies after a day of runs.
+    init: true
     env_file:
       - path: .env
         required: false

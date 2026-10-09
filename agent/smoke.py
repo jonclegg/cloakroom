@@ -57,6 +57,7 @@ def host_join(base, *parts):
 def check_site(context, smoke, site, notebook, has_key):
     """Enter one site and screenshot it. Never raises: a failure is a result."""
     result = {"site": site, "ok": False, "challenge": [], "worked_challenge": False}
+    before = set(context.pages)
     page = context.new_page()
     page.set_default_timeout(30000)
     page.bring_to_front()
@@ -88,7 +89,10 @@ def check_site(context, smoke, site, notebook, has_key):
         result["screenshot"] = shot
         if smoke.host_dir:
             result["host_screenshot"] = host_join(smoke.host_dir, shot)
-    for opened in {page, landed}:
+    # Every tab this check opened, not just the first and the last: Bing opens the
+    # site in a new tab, and the agent may move to another while it works a check.
+    # Left open, they piled up until the browser ran out of memory.
+    for opened in set(context.pages) - before:
         if not opened.is_closed():
             opened.close()
     return result

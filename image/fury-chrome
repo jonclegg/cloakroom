@@ -18,6 +18,7 @@ among them, so a profile keeps its machine across restarts.
 import ipaddress
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -28,11 +29,8 @@ from cloakbrowser.geoip import _ensure_geoip_db
 CORE = "/opt/fury/chrome"
 PERSONAS = "/opt/fury/personas.json"
 MASK64 = (1 << 64) - 1
-# Height of this Chromium's own tab strip and toolbar on Linux, in CSS px:
-# a 777 px window measured innerHeight 686. Patch 0020 reports outerHeight as
-# innerHeight plus the persona's chromeHeightDelta, so the window is sized to
-# make that sum the persona's available height.
-LINUX_CHROME_HEIGHT = 91
+OPENBOX_SYSTEM_CONFIG = "/etc/xdg/openbox/rc.xml"
+OPENBOX_CONFIG = "/root/.config/openbox/rc.xml"
 
 
 def flag_values(argv):
@@ -100,6 +98,35 @@ def image_font_families():
     return families
 
 
+def reserve_persona_desktop(screen):
+    """Give openbox the persona's menu bar and Dock (or taskbar) as screen margins.
+
+    The window is then started maximized, which fills exactly the persona's
+    available area. Maximized is the only state in which Linux Chrome draws no
+    frame of its own: un-maximized it keeps a 4 px border, so the page started
+    4 px right of window.screenX while the persona reports outerWidth ==
+    innerWidth, and every mouse event's screenX disagreed with its window.
+    Measured: events at +4, window at 0. cloakserve's /input treats a maximized
+    window as borderless too, so clicks land where they are aimed.
+    """
+    dpr = screen["devicePixelRatio"]
+    margins = {
+        "top": screen["availTop"],
+        "left": screen["availLeft"],
+        "bottom": screen["height"] - screen["availTop"] - screen["availHeight"],
+        "right": screen["width"] - screen["availLeft"] - screen["availWidth"],
+    }
+    block = "<margins>" + "".join(f"<{side}>{round(value * dpr)}</{side}>" for side, value in margins.items()) + "</margins>"
+    with open(OPENBOX_SYSTEM_CONFIG) as f:
+        config = f.read()
+    config, count = re.subn(r"<margins>.*?</margins>", block, config, flags=re.S)
+    assert count == 1, "openbox rc.xml has no <margins> block"
+    os.makedirs(os.path.dirname(OPENBOX_CONFIG), exist_ok=True)
+    with open(OPENBOX_CONFIG, "w") as f:
+        f.write(config)
+    subprocess.run(["openbox", "--reconfigure"], check=True)
+
+
 def languages_for(locale):
     language = locale.split("-")[0]
     if language == "en":
@@ -129,6 +156,9 @@ def main():
                        for purpose in ("canvas", "audio", "clientRects")}
     config["noise"]["deviceIdSalt"] = sub_seed(seed, "deviceId")
     config["fontsHidden"] = sorted(set(config["fontsHidden"]) | image_font_families())
+    # Fury's derivation writes [], and Chrome on a desktop answers ["Desktop"]:
+    # measured against CloakBrowser's Chrome 146 on the same page.
+    config["clientHints"]["formFactors"] = ["Desktop"]
     exit_ip = flags.get("fingerprint-webrtc-ip")
     if exit_ip and not ipaddress.ip_address(exit_ip).is_private:
         config["geolocation"] = geolocation_for(exit_ip)
@@ -145,17 +175,31 @@ def main():
     os.dup2(fd, 3)
     os.set_inheritable(3, True)
 
-    screen = config["screen"]
-    args = [arg for arg in argv if not arg.startswith("--fingerprint")]
+    reserve_persona_desktop(config["screen"])
+    # Linux Chromium leaves out APIs that Chrome on a Mac or Windows PC has, and a
+    # Mac user agent without them is a Linux machine to anyone who looks.
+    # Measured in the container: no navigator.share, canShare or bluetooth, no
+    # WebGPU adapter, no media devices. Each comes back with its switch.
+    features = ["Vulkan", "WebShare", "WebBluetooth"]
+    args = []
+    for arg in argv:
+        if arg.startswith("--fingerprint"):
+            continue
+        if arg.startswith("--enable-features="):
+            features += arg.split("=", 1)[1].split(",")
+            continue
+        args.append(arg)
     args += [
+        f"--enable-features={','.join(features)}",
+        "--enable-unsafe-webgpu",
+        "--use-vulkan=swiftshader",
+        # One microphone, one speaker and one camera, as a laptop has. Labels stay
+        # empty until a site is granted the permission, as they are on Chrome.
+        "--use-fake-device-for-media-stream",
         "--fury-fp-fd=3",
-        # The window fills the persona's available area, as a maximized window
-        # on that machine does: under the menu bar and above the Dock on a Mac,
-        # above the taskbar on Windows. The page measures the real window, so
-        # anywhere else would sit where that machine's own chrome is.
-        f"--window-position={screen['availLeft']},{screen['availTop']}",
-        f"--window-size={screen['availWidth']},"
-        f"{screen['availHeight'] - screen['chromeHeightDelta'] + LINUX_CHROME_HEIGHT}",
+        # Fills the persona's available area: under the menu bar and above the
+        # Dock on a Mac, above the taskbar on Windows (reserve_persona_desktop).
+        "--start-maximized",
         # No GPU in the container: WebGL and WebGPU come from SwiftShader, which
         # Chromium no longer falls back to on its own.
         "--enable-unsafe-swiftshader",
