@@ -48,6 +48,11 @@ UNBACKED_WEBGL_EXTENSIONS = {"WEBGL_compressed_texture_astc", "WEBGL_compressed_
 # fixed 32-wide warp; AMD (RDNA wave32/wave64) and Intel (SIMD8 to SIMD32) are
 # their hardware ranges, not measured.
 SUBGROUP_SIZES = {"apple": (32, 32), "nvidia": (32, 32), "amd": (32, 64), "intel": (8, 32)}
+# Codecs VideoToolbox decodes in hardware per Apple chip generation: H.264,
+# HEVC and VP9 on all of them, AV1 from M3 on (measured on an M5: all four).
+APPLE_HARDWARE_DECODERS = {"M1": ["h264", "hevc", "vp9"], "M2": ["h264", "hevc", "vp9"],
+                           "M3": ["h264", "hevc", "vp9", "av1"], "M4": ["h264", "hevc", "vp9", "av1"],
+                           "M5": ["h264", "hevc", "vp9", "av1"]}
 MASK64 = (1 << 64) - 1
 OPENBOX_SYSTEM_CONFIG = "/etc/xdg/openbox/rc.xml"
 OPENBOX_CONFIG = "/root/.config/openbox/rc.xml"
@@ -101,6 +106,14 @@ def choose_persona(platform, seed):
     return matching[-1]
 
 
+def apple_chip(config):
+    """The persona's Apple chip generation ("M1" ... "M5") from its WebGL renderer."""
+    renderer = config["gpu"]["webglParams"]["UNMASKED_RENDERER_WEBGL"]
+    match = re.search(r"Apple (M\d)", renderer)
+    assert match, f"not an Apple renderer: {renderer}"
+    return match.group(1)
+
+
 def image_font_families():
     """Families the image's own font packages installed, under /usr/share/fonts.
 
@@ -108,14 +121,19 @@ def image_font_families():
     machine has; a Mac host's own fonts are mounted under /usr/local/share/fonts.
     Measured: Liberation Sans rendered in a macOS profile without this.
     """
-    listing = subprocess.run(["fc-list", "--format", "%{file}\t%{family}\n"],
+    # fc-scan reads the files themselves: for the macOS persona mac-fonts.conf
+    # rejects these from fontconfig, and fc-list then lists none of them. Chrome
+    # on Linux still answers a request for one with its metric-compatible stand-in
+    # (Liberation Sans gets Arial), so a page found them present unless hidden here.
+    listing = subprocess.run(["fc-scan", "--format", "%{family}\n", "/usr/share/fonts"],
                              capture_output=True, text=True, check=True).stdout
     families = set()
     for line in listing.splitlines():
-        path, names = line.split("\t", 1)
-        if path.startswith("/usr/share/fonts/"):
-            families.update(name.strip() for name in names.split(","))
-    return families
+        families.update(name.strip() for name in line.split(",") if name.strip())
+    # Not files in the image: Chrome on Linux answers these croscore names with
+    # their metric-compatible counterparts (Arial, Times New Roman, Courier New),
+    # so they measured as present with the Mac's own fonts mounted.
+    return families | {"Arimo", "Tinos", "Cousine"}
 
 
 # Chrome's default fonts per generic family, as Chrome on a Mac has them. Linux
@@ -196,10 +214,12 @@ def main():
     config = persona["config"]
     config["locale"] = {"timezone": timezone, "locale": locale}
     config["navigator"]["languages"] = languages_for(locale)
-    # No clientRects noise: it moves element boxes off the 1/64 px grid every real
-    # Chrome layout lands on (measured: 224.9845 against Chrome's 224.9844).
-    config["noise"] = {purpose + "Seed": sub_seed(seed, purpose)
-                       for purpose in ("canvas", "audio")}
+    # Canvas noise only. clientRects noise moves element boxes off the 1/64 px grid
+    # every real Chrome layout lands on (measured: 224.9845 against 224.9844).
+    # Audio noise turns the host's real audio fingerprint, which is the one every
+    # machine of its CPU family answers, into a value no machine answers: without
+    # it the container gives 124.0434748024636, exactly Chrome on an M-series Mac.
+    config["noise"] = {"canvasSeed": sub_seed(seed, "canvas")}
     config["noise"]["deviceIdSalt"] = sub_seed(seed, "deviceId")
     config["fontsHidden"] = sorted(set(config["fontsHidden"]) | image_font_families())
     # Fury's derivation writes [], and Chrome on a desktop answers ["Desktop"]:
@@ -219,6 +239,24 @@ def main():
             measured = json.load(f)
         config["gpu"].update(measured["gpu"])
         config.setdefault("speech", {}).update(measured["speech"])
+        # What Chrome on a Mac answers and a Linux host does not (patches
+        # 0045-0048, 0051), measured against Chrome 154 on an M5 Mac with
+        # research/audit.py: text set as CoreText sets it, macOS system colors,
+        # HEVC and the hardware codecs VideoToolbox has, Touch ID and passkeys,
+        # a Bluetooth radio, the Mac US keyboard's ISO key, and BarcodeDetector.
+        config["text"] = {"rendering": "mac"}
+        config["systemColors"] = measured["systemColors"]
+        config["media"] = {"hevc": True,
+                           "hardwareDecoders": APPLE_HARDWARE_DECODERS[apple_chip(config)],
+                           "hardwareEncoders": ["h264", "hevc"]}
+        config["webauthn"] = measured["webauthn"]
+        config["bluetooth"] = {"available": True}
+        config["keyboard"] = {"layoutOverrides": measured["keyboardLayoutOverrides"]}
+        config["barcodeDetector"] = {"formats": measured["barcodeFormats"]}
+        # Chrome's own tier rule (content/browser/cpu_performance): an M-series
+        # chip with 8 or more cores is "ultra" (4), else it goes by core count.
+        cores = config["navigator"]["hardwareConcurrency"]
+        config["navigator"]["cpuPerformance"] = 4 if cores >= 8 else 3 if cores >= 5 else 2
     # Only the Mac measurements carry a WebGL2 list; a Windows persona has one list.
     for key in ("webglExtensions", "webgl2Extensions"):
         if key in config["gpu"]:
@@ -229,6 +267,9 @@ def main():
     # PCs prefer bgra8unorm. One catalogue machine has no WebGPU at all.
     if "webgpu" in config["gpu"]:
         webgpu = config["gpu"]["webgpu"]
+        # The persona GPU's whole feature list (patch 0049); SwiftShader alone
+        # lacks shader-f16, dual-source-blending and the texture tiers.
+        webgpu["reportPersonaFeatures"] = True
         webgpu["isFallbackAdapter"] = False
         webgpu["preferredCanvasFormat"] = "bgra8unorm"
         webgpu["subgroupMinSize"], webgpu["subgroupMaxSize"] = SUBGROUP_SIZES[webgpu["vendor"]]
@@ -253,20 +294,39 @@ def main():
     features = ["Vulkan", "WebShare", "WebBluetooth"]
     # JPEG XL puts image/jxl in every Accept header, which no Chrome release sends.
     disabled_features = ["JXLImageFormat"]
+    # --enable-unsafe-webgpu also exposes WebGPU's experimental interfaces
+    # (GPUResourceTable, GPUSubgroupMatrixConfig, writeTimestamp, multiDraw*),
+    # which no stable Chrome has; the adapter stays without them (measured).
+    blink_disabled = ["WebGPUExperimentalFeatures", "WebGPUExperimentalResourceTable"]
+    blink_enabled = []
+    color_profile = []
+    if platform == "macos":
+        # Chrome on a Mac has BarcodeDetector (macOS supplies the detector; patch
+        # 0048 answers its formats) and no Notification.image, which Blink ships
+        # only off the Mac.
+        blink_enabled.append("BarcodeDetector")
+        # AAC encoding (MediaRecorder audio/mp4, AudioEncoder mp4a) is the
+        # platform's; Chrome on a Mac has it (AudioToolbox), Linux keeps it off.
+        features.append("PlatformAudioEncoder")
+        blink_disabled.append("NotificationContentImage")
+        # Every Mac laptop since 2016 has a P3 display; the container's is sRGB.
+        color_profile = ["--force-color-profile=display-p3-d65"]
     args = []
     for arg in argv:
         if arg.startswith("--fingerprint"):
             continue
-        if arg.startswith("--enable-features="):
-            features += arg.split("=", 1)[1].split(",")
-            continue
-        if arg.startswith("--disable-features="):
-            disabled_features += arg.split("=", 1)[1].split(",")
-            continue
-        args.append(arg)
-    args += [
+        for prefix, target in (("--enable-features=", features), ("--disable-features=", disabled_features),
+                               ("--enable-blink-features=", blink_enabled), ("--disable-blink-features=", blink_disabled)):
+            if arg.startswith(prefix):
+                target += arg.split("=", 1)[1].split(",")
+                break
+        else:
+            args.append(arg)
+    args += color_profile + [
         f"--enable-features={','.join(features)}",
         f"--disable-features={','.join(disabled_features)}",
+        f"--disable-blink-features={','.join(blink_disabled)}",
+    ] + ([f"--enable-blink-features={','.join(blink_enabled)}"] if blink_enabled else []) + [
         # SwiftShader-backed 2D canvas spends ~300 ms on a page's first draw and
         # toDataURL (measured; 2 ms in software), and Akamai times exactly that.
         "--disable-accelerated-2d-canvas",

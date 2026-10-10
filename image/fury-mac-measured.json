@@ -389,5 +389,36 @@
    "Google 粤語（香港）\tzh-HK\t0\t0\tGoogle 粤語（香港）",
    "Google 國語（臺灣）\tzh-TW\t0\t0\tGoogle 國語（臺灣）"
   ]
- }
+ },
+ "systemColors": {
+  "highlight": "128,188,254,153",
+  "highlighttext": "0,0,0,255",
+  "selecteditem": "179,215,255,255",
+  "selecteditemtext": "0,0,0,255"
+ },
+ "webauthn": {
+  "platformAuthenticator": true,
+  "clientCapabilities": [
+   "extension:payment=true",
+   "hybridTransport=true",
+   "passkeyPlatformAuthenticator=true",
+   "userVerifyingPlatformAuthenticator=true"
+  ]
+ },
+ "keyboardLayoutOverrides": [
+  "IntlBackslash=§"
+ ],
+ "barcodeFormats": [
+  "aztec",
+  "code_128",
+  "code_39",
+  "code_93",
+  "data_matrix",
+  "ean_13",
+  "ean_8",
+  "itf",
+  "pdf417",
+  "qr_code",
+  "upc_e"
+ ]
 }
