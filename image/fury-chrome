@@ -38,11 +38,6 @@ MAC_MEASURED = "/opt/fury/mac-measured.json"
 # Akamai blocks that exact version (measured on LoopNet: blocked as .12, passes
 # as any other build). Bump it when Chrome stable moves on.
 STABLE_FULL_VERSION = "155.0.8059.39"
-# WebGL extensions the measured Mac lists that SwiftShader cannot back: listed,
-# getExtension() would return null for them, which Akamai checks (it asks for
-# pvrtc by name).
-UNBACKED_WEBGL_EXTENSIONS = {"WEBGL_compressed_texture_astc", "WEBGL_compressed_texture_etc", "WEBGL_compressed_texture_etc1",
-                             "WEBGL_compressed_texture_pvrtc", "WEBGL_render_shared_exponent"}
 # WebGPU subgroup widths (min, max) per persona GPU vendor, read by patch 0043 in
 # place of SwiftShader's 4. Apple measured (M-series, Chrome 154); NVIDIA is its
 # fixed 32-wide warp; AMD (RDNA wave32/wave64) and Intel (SIMD8 to SIMD32) are
@@ -253,14 +248,14 @@ def main():
         config["bluetooth"] = {"available": True}
         config["keyboard"] = {"layoutOverrides": measured["keyboardLayoutOverrides"]}
         config["barcodeDetector"] = {"formats": measured["barcodeFormats"]}
+        # VideoToolbox's H.264 High and H.265, which Chrome on a Mac lists after its
+        # software codecs; a WebRTC offer numbers its payload types from the list.
+        config["webrtc"] = {"encoderFormats": measured["webrtcEncoderFormats"],
+                            "decoderFormats": measured["webrtcDecoderFormats"]}
         # Chrome's own tier rule (content/browser/cpu_performance): an M-series
         # chip with 8 or more cores is "ultra" (4), else it goes by core count.
         cores = config["navigator"]["hardwareConcurrency"]
         config["navigator"]["cpuPerformance"] = 4 if cores >= 8 else 3 if cores >= 5 else 2
-    # Only the Mac measurements carry a WebGL2 list; a Windows persona has one list.
-    for key in ("webglExtensions", "webgl2Extensions"):
-        if key in config["gpu"]:
-            config["gpu"][key] = [name for name in config["gpu"][key] if name not in UNBACKED_WEBGL_EXTENSIONS]
     # The adapter a hardware GPU presents (patch 0043); without a GPU the core's
     # adapter is SwiftShader, which says it is a fallback adapter with 4-wide
     # subgroups and prefers rgba8unorm, the Linux canvas format. Macs and Windows

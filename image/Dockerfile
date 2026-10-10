@@ -20,7 +20,7 @@ RUN curl -fsSL --retry 3 -o /usr/local/bin/cloudflared \
 # persona config instead of CloakBrowser's --fingerprint flags.
 ARG FURY_CORE_URL=https://github.com/jonclegg/fury-antidetect-browser/releases/download/core-155.0.8059.12-linux.1
 ARG FURY_CORE_SHA256_AMD64=c725e4ba03945b3dd8aab72924771d9b0b6589960a083ad7c3ac35e6bcc921b6
-ARG FURY_CORE_SHA256_ARM64=baef58a9eea9cc73814e41d67d36cb9065c06480c2e7ecbccb1d04365a59bb76
+ARG FURY_CORE_SHA256_ARM64=25573aa9954c806f05f7b4d5fdfb8c1fcb2ae50f9cf0777d4cc97a1e2a229ec3
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends xz-utils \
     && rm -rf /var/lib/apt/lists/* \
