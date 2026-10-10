@@ -1,1 +1,1 @@
-- Cloudflare interstitial, only on search results pages. It clears by itself or with the checkbox.
+- Cloudflare interstitial, only on search results pages. It clears by itself or with one click on the Turnstile checkbox once it shows the empty box; then wait, without clicking again or reloading.

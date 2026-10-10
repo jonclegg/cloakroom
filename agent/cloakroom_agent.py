@@ -116,6 +116,22 @@ ACTION_SCHEMA = """Reply with ONLY a JSON object:
  "note": {"site": "<domain or general>", "text": "<optional: a lesson for future runs>"},
  "reason": "<why>"}"""
 
+FOCUSED_TEXT_FIELD_SCRIPT = """() => {
+  let el = document.activeElement;
+  while (el && el.shadowRoot && el.shadowRoot.activeElement) el = el.shadowRoot.activeElement;
+  if (!el) return false;
+  // A field inside a frame is focused through the frame element; trust it.
+  if (el.tagName === 'IFRAME') return true;
+  return el.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName);
+}"""
+
+# What is in view: the window's scroll position and where the element at the
+# centre sits, which also moves when a page scrolls an inner container.
+VIEW_SIGNATURE_SCRIPT = """() => {
+  const el = document.elementFromPoint(innerWidth / 2, innerHeight / 2);
+  return [scrollY, el ? el.tagName : '', el ? Math.round(el.getBoundingClientRect().top) : 0];
+}"""
+
 READ_TEXT_LIMIT = 6000
 READ_LINK_LIMIT = 60
 
@@ -223,6 +239,39 @@ def frame_offset(frame):
     return box["x"], box["y"]
 
 
+def is_challenge_frame(frame):
+    """Cloudflare's challenge frame, which no script of ours may run in.
+
+    Turnstile notices code evaluated inside its frame: with the agent's DOM scans
+    running there every step, a click on the checkbox kept cycling back to the
+    checkbox; the same click with nothing evaluated in the frame cleared it
+    (measured on Crunchbase).
+    """
+    return "challenges.cloudflare.com" in frame.url
+
+
+def turnstile_hints(page):
+    """The Cloudflare Turnstile checkbox, which no DOM scan can see.
+
+    The checkbox sits in a closed shadow root inside Cloudflare's cross-origin
+    frame, so querySelectorAll finds nothing there. The frame itself is visible
+    from the page, and the checkbox is always at its left edge, mid-height
+    (measured: a real click there clears Crunchbase's "Verify you are human").
+    """
+    hints = []
+    for frame in page.frames:
+        if not is_challenge_frame(frame):
+            continue
+        try:
+            box = frame.frame_element().bounding_box()
+        except Exception:  # noqa: BLE001 - frames detach mid-scan
+            continue
+        if box and box["width"] >= 100 and box["height"] >= 40:
+            hints.append({"tag": "checkbox", "text": "Cloudflare Turnstile: Verify you are human", "label": "turnstile",
+                          "x": round(box["x"] + 28), "y": round(box["y"] + box["height"] / 2)})
+    return hints
+
+
 def dom_hints(page, limit=40):
     """Visible interactive elements in the viewport, with page CSS-pixel centres.
 
@@ -231,6 +280,8 @@ def dom_hints(page, limit=40):
     """
     hints = []
     for frame in page.frames:
+        if is_challenge_frame(frame):
+            continue
         try:
             offset = frame_offset(frame)
             if offset is None:
@@ -242,6 +293,7 @@ def dom_hints(page, limit=40):
             hint["x"] = round(hint["x"] + offset[0])
             hint["y"] = round(hint["y"] + offset[1])
             hints.append(hint)
+    hints = turnstile_hints(page) + hints
     seen, out = set(), []
     for h in hints:
         key = (h["x"], h["y"], h["text"])
@@ -301,6 +353,8 @@ def detect_block(page):
     texts = []
     found = []
     for frame in page.frames:
+        if is_challenge_frame(frame):
+            continue
         try:
             result = frame.evaluate(DETECT_SCRIPT, VENDOR_WIDGETS)
         except Exception:  # noqa: BLE001 - frames detach mid-scan
@@ -563,6 +617,12 @@ def execute(page, d, turn):
         if x is not None and y is not None:
             humanize.click_at(page, x, y)
             humanize.pause(0.2, 0.4)
+        if not page.evaluate(FOCUSED_TEXT_FIELD_SCRIPT):
+            # Typed into the page instead, the keys act on it: a space scrolls a
+            # screen and Enter does nothing (measured on Walgreens, where the
+            # agent then spent 38 steps looking for the header it had scrolled off).
+            return (f"type not done: the click at ({x},{y}) did not focus a text field; "
+                    f"find the field itself, or click the search icon that opens it"), page
         humanize.human_type(page, text)
         humanize.pause(0.3, 0.7)
         if d.get("submit"):
@@ -578,8 +638,14 @@ def execute(page, d, turn):
 
     if action == "scroll":
         amount = int(d.get("amount") or 600)
+        before = page.evaluate(VIEW_SIGNATURE_SCRIPT)
         humanize.scroll(page, amount)
         humanize.pause(0.6, 1.2)
+        if page.evaluate(VIEW_SIGNATURE_SCRIPT) == before:
+            # The wheel goes to whatever is under the pointer, and a carousel there
+            # can swallow it.
+            return (f"scroll {amount}: the page did not move; `press` Home, End, "
+                    f"PageUp or PageDown instead"), page
         return f"scroll {amount}", page
 
     if action == "back":
