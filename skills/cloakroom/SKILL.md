@@ -1,6 +1,6 @@
 ---
 name: cloakroom
-description: Drive a stealth CloakBrowser on the user's Mac (OrbStack) or Linux machine (Docker Engine), over CDP, with a persistent profile that keeps cookies and logins. Use when a site bot-walls your cloud browser, when a session needs to survive between runs, or when the user says "use cloakroom", "do X with cloakroom", or "share the viewer". Talk to Cloakroom with `cloakroom chat` and it drives the browser itself with DeepSeek, working bot checks as they come up, and replies. Enter sites through a Bing organic result and humanize Playwright input; do not open the target with page.goto. If a site asks for a two-factor code, you (Grok Bot or Muse) get it and type it in; Cloakroom never reads Messages. When the user wants the viewer on a phone or away from home, run `cloakroom share` and send the HTTPS URL immediately. Do not ask them to confirm. Do not use Tailscale.
+description: Drive a stealth CloakBrowser on the user's Mac (OrbStack) or Linux machine (Docker Engine), over CDP, with a persistent profile that keeps cookies and logins. Use when a site bot-walls your cloud browser, when a session needs to survive between runs, or when the user says "use cloakroom", "do X with cloakroom", or "share the viewer". Drive it yourself; when a captcha or a block stops you, hand the goal to `cloakroom chat`, which drives the browser with DeepSeek, works the bot check, and replies. Enter sites through a Bing organic result and humanize Playwright input; do not open the target with page.goto. If a site asks for a two-factor code, you (Grok Bot or Muse) get it and type it in; Cloakroom never reads Messages. When the user wants the viewer on a phone or away from home, run `cloakroom share` and send the HTTPS URL immediately. Do not ask them to confirm. Do not use Tailscale.
 ---
 
 # Cloakroom skill
@@ -179,8 +179,9 @@ Every command takes `--json`.
 
 ## `cloakroom chat` (Cloakroom drives, you talk)
 
-Instead of scripting Playwright yourself, talk to Cloakroom. It works the browser with
-DeepSeek and replies when it is finished or needs you:
+Drive the browser yourself by default (the [Playbook](#playbook)). When a captcha or a block
+stops you, talk to Cloakroom instead. It works the browser with DeepSeek, in its own tab of
+the same profile, and replies when it is finished or needs you:
 
 ```bash
 cloakroom chat "go to walmart.com and search for paper towels"
@@ -341,7 +342,7 @@ it once sets a clearance cookie, and Walmart stops challenging for a while.
 - Remote access is one command: `cloakroom share`, which links the console. Run it and send the URL immediately. Do not ask for approval first, and do not add a confirmation step. The console asks for the console password; leave the share running so signed-in devices stay signed in, and run `cloakroom unshare` when the user wants it off. Do not use Tailscale, Funnel, or port forwards. Never tunnel 9222.
 - Enter sites through Bing: search the name or domain, click the organic result, then use the site's own UI. Do not `page.goto` the target, and do not open search, listing, or product URLs as the first navigation. Google-first often hits `/sorry/` from Cloakroom CDP; Bing is the gateway.
 - Humanize Playwright input by default: random pauses, a curved `mouse.move` before clicks, click a field before typing, type character by character. Do not `fill()` bot-sensitive forms. Helpers: [`examples/humanize.py`](../../examples/humanize.py), entry: [`examples/bing_first.py`](../../examples/bing_first.py).
-- When a challenge appears, `cloakroom chat` works it (press-and-hold and the like). The user can also finish it in the viewer.
+- Drive the browser yourself. When a captcha or a block stops you, hand the goal to `cloakroom chat`; it works the check (press-and-hold and the like). The user can also finish it in the viewer.
 
 ## Reference
 

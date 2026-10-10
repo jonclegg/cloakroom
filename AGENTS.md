@@ -1,6 +1,6 @@
 # Agent instructions
 
-Cloakroom is a stealth browser (CloakBrowser) with a persistent profile, running in a container on the user's own computer. You give it goals with `cloakroom chat`, or drive it yourself over CDP. Use it when a site blocks your cloud browser, when cookies and logins need to persist between runs, or when the user asks you to do something "with cloakroom". [`skills/cloakroom/SKILL.md`](skills/cloakroom/SKILL.md) is the full reference.
+Cloakroom is a stealth browser (CloakBrowser) with a persistent profile, running in a container on the user's own computer. You drive it yourself over CDP, and hand a goal to `cloakroom chat` when a captcha or a block stops you. Use it when a site blocks your cloud browser, when cookies and logins need to persist between runs, or when the user asks you to do something "with cloakroom". [`skills/cloakroom/SKILL.md`](skills/cloakroom/SKILL.md) is the full reference.
 
 ## Installing Cloakroom for the user
 
@@ -57,15 +57,15 @@ On Windows there is no `cloakroom` command on the host. Use `docker exec cloakro
 ```bash
 cloakroom status --json          # is it ready, viewer and API URLs, key set?
 cloakroom start                  # if not ready
-cloakroom chat "<message>"       # Cloakroom drives the browser with DeepSeek and replies
+cloakroom chat "<message>"       # captcha or block: Cloakroom drives with DeepSeek and replies
 cloakroom share --json           # console link (sessions + live browser); send the url immediately
 cloakroom password               # one-time link to set or reset the console password (--share: from anywhere)
 cloakroom unshare                # stop the share when the user wants it off
 ```
 
-**Prefer talking to Cloakroom.** `cloakroom chat "search walmart.com for paper towels"` sends a message to the chat API inside the container. Cloakroom screenshots the page, DeepSeek picks the next action, and Cloakroom carries it out as real mouse and keyboard input, press-and-hold included. When it's done it replies with a status: `done`, `needs_input`, `needs_user` or `failed`. Follow up with `--session <id>` to stay in the same tab. It can read pages and save a listing's photos, and it keeps per-site notes so the next run starts out knowing more. See [`skills/cloakroom/SKILL.md`](skills/cloakroom/SKILL.md#cloakroom-chat-cloakroom-drives-you-talk).
+**Drive it yourself** with Playwright: `connect_over_cdp("http://127.0.0.1:9222")`, then use `browser.contexts[0]`, which is the saved profile with its cookies. Send mouse and keyboard input through [`examples/humanize.py`](examples/humanize.py), not `page.mouse` or `page.keyboard`. It delivers real X11 events through Cloakroom's `/input` endpoint.
 
-**Or drive it yourself** with Playwright: `connect_over_cdp("http://127.0.0.1:9222")`, then use `browser.contexts[0]`, which is the saved profile with its cookies. Send mouse and keyboard input through [`examples/humanize.py`](examples/humanize.py), not `page.mouse` or `page.keyboard`. It delivers real X11 events through Cloakroom's `/input` endpoint.
+**Hand off to Cloakroom for a captcha or a block.** When a bot check comes up (a captcha, press-and-hold, Turnstile) or the site blocks you and you can't get past it, give the goal to `cloakroom chat`, for example `cloakroom chat "open walmart.com and search for paper towels"`. Cloakroom screenshots the page, DeepSeek picks the next action, and Cloakroom carries it out as real mouse and keyboard input, press-and-hold included. It works in its own tab of the same profile, so once it has cleared the check you can carry on in yours. When it's done it replies with a status: `done`, `needs_input`, `needs_user` or `failed`. Follow up with `--session <id>` to stay in the same tab. It can read pages and save a listing's photos, and it keeps per-site notes so the next run starts out knowing more. See [`skills/cloakroom/SKILL.md`](skills/cloakroom/SKILL.md#cloakroom-chat-cloakroom-drives-you-talk).
 
 **Enter sites from Bing, and humanize input.** Do not `page.goto` the target site, and do not open a search, listing or product URL as the first navigation. Open `https://www.bing.com`, search the site name, click the organic result (official domain, skip ads), then use that site's own search and links ([`examples/bing_first.py`](examples/bing_first.py)). Starting from Google often hits `/sorry/`. Pause between actions, click a field before typing, and type character by character. If a bot check still appears, `cloakroom chat` works it.
 
