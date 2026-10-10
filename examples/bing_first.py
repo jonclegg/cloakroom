@@ -83,6 +83,11 @@ def _cites_domain(link, domain):
 
 def _organic_link(page, domain, skip=0):
     links = page.locator("#b_results li.b_algo:not(.b_ad) h2 a")
+    # Under load Bing sometimes answers with the search bar and an empty result
+    # list, filled in a few seconds later or not at all; give it the time.
+    deadline = time.time() + 10
+    while links.count() == 0 and time.time() < deadline:
+        time.sleep(0.5)
     matches = []
     for index in range(links.count()):
         link = links.nth(index)
@@ -261,6 +266,9 @@ def open_via_bing(page, domain, query=None, attempts=4):
         except RuntimeError:
             if attempt == attempts - 1:
                 raise
+            # An empty result page is Bing throttling; searching again at once
+            # gets another one. Measured: three agents sharing an IP saw it.
+            time.sleep(5 * (attempt + 1))
             continue
         if _same_site(domain, landed.url):
             return landed

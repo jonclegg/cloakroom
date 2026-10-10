@@ -214,8 +214,10 @@ def main():
             measured = json.load(f)
         config["gpu"].update(measured["gpu"])
         config.setdefault("speech", {}).update(measured["speech"])
+    # Only the Mac measurements carry a WebGL2 list; a Windows persona has one list.
     for key in ("webglExtensions", "webgl2Extensions"):
-        config["gpu"][key] = [name for name in config["gpu"][key] if name not in UNBACKED_WEBGL_EXTENSIONS]
+        if key in config["gpu"]:
+            config["gpu"][key] = [name for name in config["gpu"][key] if name not in UNBACKED_WEBGL_EXTENSIONS]
 
     print(f"fury-chrome: persona {persona['id']}, seed {seed}, {timezone}, {locale}", file=sys.stderr)
 

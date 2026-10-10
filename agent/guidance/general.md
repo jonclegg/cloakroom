@@ -5,3 +5,5 @@
 - Hard blocks (Akamai "Access Denied" 403, Cloudflare "Attention Required!") have nothing to click. Wait, then retry once (`goto` the same URL, or `open` the site again). If still blocked, reply blocked: these clear as the browser's identity ages, not by technique.
 - DataDome "Bot or Not?" slider: a correctly aimed, humanized drag is still rejected. Try one `drag` at most, then reply blocked so the caller can solve it in the viewer.
 - Retry before giving up: many checks cleared only on the second attempt.
+- Site search, from the 300-site runs on 2026-10-10: find the search field in the DOM hints (an input of type search, or a placeholder or label saying Search) and use one `type` with its coordinates and `submit: true`. If no field shows, the magnifier icon in the header opens it. Scrolling the page does not find it.
+- Sign-in, cookie and offer pop-ups cover the page: close them first (their ×, "No thanks", or `press` Escape). Do not fill in a sign-in form you were not asked to.

@@ -108,6 +108,7 @@ ACTION_SCHEMA = """Reply with ONLY a JSON object:
  "x": <int px or null>, "y": <int px or null>,
  "x2": <int px or null>, "y2": <int px or null>,
  "text": "<text to type, key name, domain, url, folder name, or your reply; else null>",
+ "submit": true|false,  (only for type: press Enter after typing, e.g. to run a search)
  "amount": <int, only for scroll: pixels, positive is down>,
  "hold_ms": <int, only for hold>,
  "status": "done"|"needs_input"|"needs_user"|"failed",  (only for reply)
@@ -564,6 +565,10 @@ def execute(page, d, turn):
             humanize.pause(0.2, 0.4)
         humanize.human_type(page, text)
         humanize.pause(0.3, 0.7)
+        if d.get("submit"):
+            humanize.press(page, "Enter")
+            humanize.pause(0.8, 1.6)
+            return f"type {text!r} and Enter", page
         return f"type {text!r}", page
 
     if action == "press" and text:
