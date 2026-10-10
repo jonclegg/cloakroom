@@ -39,7 +39,7 @@ The browser keeps running in the background (as long as OrbStack or Docker Engin
    Connect, then enter the site with Bing (step 3). [`examples/hello.py`](../../examples/hello.py) runs that path for `example.com`. The steps live in [`examples/bing_first.py`](../../examples/bing_first.py); mouse and typing live in [`examples/humanize.py`](../../examples/humanize.py).
 
    ```python
-   from playwright.sync_api import sync_playwright
+   from patchright.sync_api import sync_playwright
    import bing_first  # examples/bing_first.py
 
    with sync_playwright() as pw:
@@ -50,9 +50,9 @@ The browser keeps running in the background (as long as OrbStack or Docker Engin
        print(landed.title())
    ```
 
-   Puppeteer or any tool that attaches to an existing Chrome works too. Same entry rule: Bing first, then humanized input on the site.
+   Use [Patchright](https://github.com/Kaliiiiiiiiii-Vinyzu/patchright), which has Playwright's API, not stock Playwright or Puppeteer. Those enable the `Runtime` domain on every tab they attach to; Kasada sites (Chewy, Crocs, Hyatt, Realtor) detect it, and a page that has to issue a new Kasada token stays blank. Same entry rule either way: Bing first, then humanized input on the site.
 
-   If Playwright isn't installed, `pip install playwright` is enough. Skip `playwright install`: you attach to the running browser, so no browser download is needed.
+   If Patchright isn't installed, `pip install patchright` is enough. Skip `patchright install`: you attach to the running browser, so no browser download is needed.
 
    `browser.contexts[0]` is the persistent profile: cookies and logins from earlier runs are already there. Don't create a new context unless you want a clean session. `browser.close()` only disconnects you; the browser keeps running.
 

@@ -73,8 +73,8 @@ from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlparse
 
-from playwright.sync_api import Error as PlaywrightError
-from playwright.sync_api import sync_playwright
+from patchright.sync_api import Error as PlaywrightError
+from patchright.sync_api import sync_playwright
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)

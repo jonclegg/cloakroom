@@ -201,7 +201,7 @@
         <button type="button" data-copy="cmd">Copy</button>
       </div>
       <div class="hint">Paste that to your agent. It installs Cloakroom, asks before installing Docker, opens a page for your OpenRouter key, and shows you screenshots of Amazon, Walmart, Target and Best Buy to prove it works.</div>
-      <div class="chips"><span class="chip">MIT</span><span class="chip">macOS · Linux · Windows</span><span class="chip">Playwright / Puppeteer over CDP</span><span class="chip">No SDK, no cloud</span></div>
+      <div class="chips"><span class="chip">MIT</span><span class="chip">macOS · Linux · Windows</span><span class="chip">Patchright over CDP</span><span class="chip">No SDK, no cloud</span></div>
     </div>
     <img class="hero-mark" src="brand/cloak-logo.png" alt="Cloak logo: a hooded figure with glowing eyes">
   </header>
@@ -250,7 +250,7 @@
       <div class="node home">
         <div class="t">Your computer at home</div>
         <h3>Agent + Cloakroom</h3>
-        <p>The agent runs here and connects with plain Playwright or Puppeteer:</p>
+        <p>The agent runs here and connects with Patchright, Playwright's API:</p>
         <div class="box">
           <div class="t">Docker container</div>
           <ul>
@@ -272,10 +272,10 @@
     <div class="grid code2" style="margin-top:28px">
       <div>
         <h3>Drive it with the tools you already use</h3>
-        <p class="muted">There's no SDK: anything that speaks the Chrome DevTools Protocol can connect. <code>pip install playwright</code> is enough; you don't need <code>playwright install</code>, because the browser is already running in the container.</p>
+        <p class="muted">There's no SDK: anything that speaks the Chrome DevTools Protocol can connect. Use <code>pip install patchright</code>: it has Playwright's API without the <code>Runtime.enable</code> call that Kasada sites detect. You don't need <code>patchright install</code>, because the browser is already running in the container.</p>
         <p class="muted">Closing the connection just disconnects. The browser and its profile keep running until <code>cloakroom stop</code>.</p>
       </div>
-<pre><span class="k">from</span> playwright.sync_api <span class="k">import</span> sync_playwright
+<pre><span class="k">from</span> patchright.sync_api <span class="k">import</span> sync_playwright
 
 <span class="k">with</span> sync_playwright() <span class="k">as</span> pw:
     browser = pw.chromium.connect_over_cdp(<span class="s">"http://127.0.0.1:9222"</span>)
