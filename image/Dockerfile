@@ -6,6 +6,11 @@ RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends tzdata x11vnc novnc websockify \
     && rm -rf /var/lib/apt/lists/*
 
+# Patchright: Playwright's API without the Runtime.enable call that Kasada
+# (Chewy, Crocs, Hyatt, Realtor) detects. Under stock Playwright, a Kasada page
+# that has to issue a new token stays blank. Same version as the base's Playwright.
+RUN pip install --no-cache-dir patchright==1.63.0
+
 # `cloakroom share`: a Cloudflare quick tunnel to the viewer, run by the chat API so
 # a run that needs the user can hand them a link. The host needs nothing for it.
 ARG TARGETARCH
@@ -26,8 +31,7 @@ COPY cloakroom-serve.sh /usr/local/bin/cloakroom-serve
 COPY cloakroom-client.sh /usr/local/bin/cloakroom
 RUN chmod +x /usr/local/bin/cloakroom-serve /usr/local/bin/cloakroom
 
-# The chat API and its DeepSeek agent. The base image already has Python and
-# Playwright; the API uses only the standard library on top of them.
+# The chat API and its DeepSeek agent: Patchright (above) and the standard library.
 COPY --from=agent *.py console.html /opt/cloakroom/agent/
 COPY --from=agent guidance /opt/cloakroom/agent/guidance
 COPY --from=examples humanize.py bing_first.py /opt/cloakroom/examples/
