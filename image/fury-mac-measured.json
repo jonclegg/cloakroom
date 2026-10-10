@@ -477,5 +477,30 @@
   "H264;level-asymmetry-allowed=1;packetization-mode=0;profile-level-id=64001f",
   "H265;level-id=180;profile-id=1;tier-flag=0;tx-mode=SRST",
   "H265;level-id=180;profile-id=2;tier-flag=0;tx-mode=SRST"
+ ],
+ "webgpuFeatures": [
+  "bgra8unorm-storage",
+  "clip-distances",
+  "core-features-and-limits",
+  "depth-clip-control",
+  "depth32float-stencil8",
+  "dual-source-blending",
+  "float32-blendable",
+  "float32-filterable",
+  "indirect-first-instance",
+  "primitive-index",
+  "rg11b10ufloat-renderable",
+  "shader-f16",
+  "subgroup-size-control",
+  "subgroups",
+  "texture-component-swizzle",
+  "texture-compression-astc",
+  "texture-compression-astc-sliced-3d",
+  "texture-compression-bc",
+  "texture-compression-bc-sliced-3d",
+  "texture-compression-etc2",
+  "texture-formats-tier1",
+  "texture-formats-tier2",
+  "timestamp-query"
  ]
 }

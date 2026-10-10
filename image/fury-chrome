@@ -220,6 +220,10 @@ def main():
     # Fury's derivation writes [], and Chrome on a desktop answers ["Desktop"]:
     # measured against CloakBrowser's Chrome 146 on the same page.
     config["clientHints"]["formFactors"] = ["Desktop"]
+    # Google Chrome has a translate service, and with it Blink gives <a> its
+    # hrefTranslate (patch 0054); the core has no Google API keys and no service
+    # (measured: HTMLAnchorElement has 33 members on a Mac, 32 without).
+    config["translate"] = {"serviceAvailable": True}
     core_version = config["clientHints"]["fullVersion"]
     config["clientHints"]["fullVersion"] = STABLE_FULL_VERSION
     config["clientHints"]["fullVersionList"] = [entry.replace(core_version, STABLE_FULL_VERSION)
@@ -256,6 +260,10 @@ def main():
         # chip with 8 or more cores is "ultra" (4), else it goes by core count.
         cores = config["navigator"]["hardwareConcurrency"]
         config["navigator"]["cpuPerformance"] = 4 if cores >= 8 else 3 if cores >= 5 else 2
+        # Chrome 154 on an Apple GPU also offers subgroup-size-control, which the
+        # catalogue's Apple list predates.
+        if "webgpu" in config["gpu"]:
+            config["gpu"]["webgpu"]["features"] = measured["webgpuFeatures"]
     # The adapter a hardware GPU presents (patch 0043); without a GPU the core's
     # adapter is SwiftShader, which says it is a fallback adapter with 4-wide
     # subgroups and prefers rgba8unorm, the Linux canvas format. Macs and Windows
