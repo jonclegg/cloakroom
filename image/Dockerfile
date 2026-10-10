@@ -20,7 +20,7 @@ RUN curl -fsSL --retry 3 -o /usr/local/bin/cloudflared \
 # persona config instead of CloakBrowser's --fingerprint flags.
 ARG FURY_CORE_URL=https://github.com/jonclegg/fury-antidetect-browser/releases/download/core-155.0.8059.12-linux.1
 ARG FURY_CORE_SHA256_AMD64=c725e4ba03945b3dd8aab72924771d9b0b6589960a083ad7c3ac35e6bcc921b6
-ARG FURY_CORE_SHA256_ARM64=b91057c0dfd436aabefcccec1c52fe340308196cdd9d98a72ae1742b47143745
+ARG FURY_CORE_SHA256_ARM64=6d86d8510303e54f4370481095f31b966f6f5348d522c3c06fcd14c66b9c6b31
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends xz-utils \
     && rm -rf /var/lib/apt/lists/* \
@@ -35,6 +35,8 @@ RUN apt-get update \
     && rm /tmp/fury-core.tar.xz \
     && /opt/fury/chrome --version
 COPY fury-personas.json /opt/fury/personas.json
+COPY fury-mac-measured.json /opt/fury/mac-measured.json
+COPY mac-fonts.conf /opt/cloakroom/mac-fonts.conf
 COPY fury-chrome /usr/local/bin/fury-chrome
 # CLOAKBROWSER_VERSION is what cloakserve gates its window settling on. Settling
 # exists for CloakBrowser builds before 148 that report an incoherent window;

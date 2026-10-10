@@ -42,7 +42,12 @@ if [ -n "${CLOAKROOM_FINGERPRINT_SEED:-}" ]; then
   args+=(--fingerprint="$CLOAKROOM_FINGERPRINT_SEED")
 fi
 if [ "${CLOAKROOM_PERSONA:-windows}" = "macos" ]; then
-  # Host fonts are mounted under /usr/local/share/fonts by docker-compose.mac.yml
+  # Host fonts are mounted under /usr/local/share/fonts by docker-compose.mac.yml.
+  # Generic families resolve to the Mac's choices (mac-fonts.conf); system-ui is
+  # Chrome's UI font on Linux, which it takes from GTK.
+  cp /opt/cloakroom/mac-fonts.conf /etc/fonts/local.conf
+  mkdir -p /root/.config/gtk-3.0
+  printf '[Settings]\ngtk-font-name=.SF NS 13\n' > /root/.config/gtk-3.0/settings.ini
   fc-cache -f >/dev/null
   args+=(--fingerprint-platform=macos --force-device-scale-factor=2)
 fi

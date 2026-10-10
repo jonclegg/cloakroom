@@ -28,6 +28,21 @@ from cloakbrowser.geoip import _ensure_geoip_db
 
 CORE = "/opt/fury/chrome"
 PERSONAS = "/opt/fury/personas.json"
+# What Fury's catalogue persona does not carry and a real Mac reports: WebGL2
+# limits, shader precision, the WebGL2 extension list and the voice list,
+# measured from Chrome on an Apple Silicon Mac. Without them the container's
+# software renderer and empty voice list show through (read by patches 0034, 0042).
+MAC_MEASURED = "/opt/fury/mac-measured.json"
+# Chrome's current stable build, which the persona claims in place of the core's
+# own. The core is built from 155.0.8059.12, a beta every Fury build reports;
+# Akamai blocks that exact version (measured on LoopNet: blocked as .12, passes
+# as any other build). Bump it when Chrome stable moves on.
+STABLE_FULL_VERSION = "155.0.8059.39"
+# WebGL extensions the measured Mac lists that SwiftShader cannot back: listed,
+# getExtension() would return null for them, which Akamai checks (it asks for
+# pvrtc by name).
+UNBACKED_WEBGL_EXTENSIONS = {"WEBGL_compressed_texture_astc", "WEBGL_compressed_texture_etc", "WEBGL_compressed_texture_etc1",
+                             "WEBGL_compressed_texture_pvrtc", "WEBGL_render_shared_exponent"}
 MASK64 = (1 << 64) - 1
 OPENBOX_SYSTEM_CONFIG = "/etc/xdg/openbox/rc.xml"
 OPENBOX_CONFIG = "/root/.config/openbox/rc.xml"
@@ -98,6 +113,30 @@ def image_font_families():
     return families
 
 
+# Chrome's default fonts per generic family, as Chrome on a Mac has them. Linux
+# Chrome takes cursive and fantasy from its own defaults (Comic Sans MS, Impact)
+# rather than fontconfig, so mac-fonts.conf cannot reach them. Measured against
+# Chrome 154 on macOS with the same fonts: cursive is Apple Chancery, fantasy
+# Papyrus.
+MAC_DEFAULT_FONTS = {"standard": "Times", "serif": "Times", "sansserif": "Helvetica",
+                     "fixed": "Menlo", "cursive": "Apple Chancery", "fantasy": "Papyrus"}
+
+
+def set_default_fonts(user_data_dir, fonts):
+    """Merge Chrome's default-font preferences into the profile before it starts."""
+    path = os.path.join(user_data_dir, "Default", "Preferences")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    preferences = {}
+    if os.path.exists(path):
+        with open(path) as f:
+            preferences = json.load(f)
+    webprefs = preferences.setdefault("webkit", {}).setdefault("webprefs", {}).setdefault("fonts", {})
+    for family, font in fonts.items():
+        webprefs[family] = {"Zyyy": font}
+    with open(path, "w") as f:
+        json.dump(preferences, f)
+
+
 def reserve_persona_desktop(screen):
     """Give openbox the persona's menu bar and Dock (or taskbar) as screen margins.
 
@@ -152,16 +191,31 @@ def main():
     config = persona["config"]
     config["locale"] = {"timezone": timezone, "locale": locale}
     config["navigator"]["languages"] = languages_for(locale)
+    # No clientRects noise: it moves element boxes off the 1/64 px grid every real
+    # Chrome layout lands on (measured: 224.9845 against Chrome's 224.9844).
     config["noise"] = {purpose + "Seed": sub_seed(seed, purpose)
-                       for purpose in ("canvas", "audio", "clientRects")}
+                       for purpose in ("canvas", "audio")}
     config["noise"]["deviceIdSalt"] = sub_seed(seed, "deviceId")
     config["fontsHidden"] = sorted(set(config["fontsHidden"]) | image_font_families())
     # Fury's derivation writes [], and Chrome on a desktop answers ["Desktop"]:
     # measured against CloakBrowser's Chrome 146 on the same page.
     config["clientHints"]["formFactors"] = ["Desktop"]
+    core_version = config["clientHints"]["fullVersion"]
+    config["clientHints"]["fullVersion"] = STABLE_FULL_VERSION
+    config["clientHints"]["fullVersionList"] = [entry.replace(core_version, STABLE_FULL_VERSION)
+                                                for entry in config["clientHints"]["fullVersionList"]]
     exit_ip = flags.get("fingerprint-webrtc-ip")
     if exit_ip and not ipaddress.ip_address(exit_ip).is_private:
         config["geolocation"] = geolocation_for(exit_ip)
+
+    if platform == "macos":
+        set_default_fonts(flags["user-data-dir"], MAC_DEFAULT_FONTS)
+        with open(MAC_MEASURED) as f:
+            measured = json.load(f)
+        config["gpu"].update(measured["gpu"])
+        config.setdefault("speech", {}).update(measured["speech"])
+    for key in ("webglExtensions", "webgl2Extensions"):
+        config["gpu"][key] = [name for name in config["gpu"][key] if name not in UNBACKED_WEBGL_EXTENSIONS]
 
     print(f"fury-chrome: persona {persona['id']}, seed {seed}, {timezone}, {locale}", file=sys.stderr)
 
@@ -181,6 +235,8 @@ def main():
     # Measured in the container: no navigator.share, canShare or bluetooth, no
     # WebGPU adapter, no media devices. Each comes back with its switch.
     features = ["Vulkan", "WebShare", "WebBluetooth"]
+    # JPEG XL puts image/jxl in every Accept header, which no Chrome release sends.
+    disabled_features = ["JXLImageFormat"]
     args = []
     for arg in argv:
         if arg.startswith("--fingerprint"):
@@ -188,9 +244,16 @@ def main():
         if arg.startswith("--enable-features="):
             features += arg.split("=", 1)[1].split(",")
             continue
+        if arg.startswith("--disable-features="):
+            disabled_features += arg.split("=", 1)[1].split(",")
+            continue
         args.append(arg)
     args += [
         f"--enable-features={','.join(features)}",
+        f"--disable-features={','.join(disabled_features)}",
+        # SwiftShader-backed 2D canvas spends ~300 ms on a page's first draw and
+        # toDataURL (measured; 2 ms in software), and Akamai times exactly that.
+        "--disable-accelerated-2d-canvas",
         "--enable-unsafe-webgpu",
         "--use-vulkan=swiftshader",
         # One microphone, one speaker and one camera, as a laptop has. Labels stay
